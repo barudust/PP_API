@@ -1,0 +1,9 @@
+fastapi
+uvicorn[standard]
+sqlalchemy
+alembic
+databases[postgresql]
+asyncpg
+psycopg2-binary
+pydantic
+requests
