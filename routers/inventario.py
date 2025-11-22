@@ -4,8 +4,6 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, update
-
-# --- Importaciones del proyecto ---
 from models import inventario, ingreso_inventario
 from schemas import InventarioIn, Inventario, IngresoInventarioIn, IngresoInventario
 from database import database, fecha_local_iso, fecha_local_iso_simple # Importamos las funciones de fecha
@@ -64,8 +62,8 @@ async def eliminar_inventario(id: int):
 # === INGRESO DE INVENTARIO (Lógica de Negocio) ===
 
 @router.post("/ingreso-inventario/", response_model=IngresoInventario)
+@router.post("/ingreso-inventario/", response_model=IngresoInventario)
 async def ingresar_inventario(data: IngresoInventarioIn):
-    # (Copiado de tu main.py)
     query_inventario = select(inventario).where(
         (inventario.c.producto_id == data.producto_id) &
         (inventario.c.sucursal_id == data.sucursal_id)
@@ -73,7 +71,10 @@ async def ingresar_inventario(data: IngresoInventarioIn):
     result = await database.fetch_one(query_inventario)
 
     if result:
-        nueva_cantidad = result["cantidad"] + data.cantidad
+        # --- CORRECCIÓN AQUÍ ---
+        # Convertimos result["cantidad"] (que es Decimal) a float
+        nueva_cantidad = float(result["cantidad"]) + data.cantidad
+        
         update_query = (
             update(inventario)
             .where(inventario.c.id == result["id"])
@@ -103,10 +104,12 @@ async def ingresar_inventario(data: IngresoInventarioIn):
     ingreso_query = ingreso_inventario.select().where(ingreso_inventario.c.id == id_insertado)
     ingreso = await database.fetch_one(ingreso_query)
     
-    # Aquí tu 'schemas.py' espera un datetime, no un string
-    # Lo adaptamos para que funcione con tu schema 'IngresoInventario'
-    return IngresoInventario(**ingreso)
-
+    # Mantén esta corrección que hicimos antes para la fecha
+    ingreso_dict = dict(ingreso)
+    ingreso_dict["fecha_actualizacion"] = fecha_local_iso(ingreso_dict["fecha_actualizacion"])
+    
+    return IngresoInventario(**ingreso_dict)   
+ 
 
 @router.get("/ingresos-inventario/")
 async def listar_ingresos_inventario(
