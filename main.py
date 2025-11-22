@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 # --- ¡Nuevas importaciones! ---
 from database import database 
 # Importamos TODOS los routers
-from routers import productos, categorias, atributos, inventario, sucursales, usuarios # <-- AÑADIDO
+from routers import productos, categorias, atributos, inventario, sucursales, usuarios, clientes
 
 # ... (tu lifespan se queda igual) ...
 @asynccontextmanager
@@ -35,4 +35,5 @@ app.include_router(atributos.router)
 app.include_router(inventario.router)
 app.include_router(sucursales.router)
 app.include_router(usuarios.router) # <-- AÑADIDO
+app.include_router(clientes.router) # <-- AGREGAR
 print("Routers incluidos. Iniciando app.")

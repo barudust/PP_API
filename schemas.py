@@ -2,62 +2,56 @@ from pydantic import BaseModel
 from typing import Optional, List
 from datetime import datetime
 
-# === ATRIBUTOS SIMPLES ===
+# === ATRIBUTOS (Sin cambios) ===
 class CategoriaIn(BaseModel):
     nombre: str
 class Categoria(CategoriaIn):
     id: int
-
 class SubcategoriaIn(BaseModel):
     nombre: str
     categoria_id: int
 class Subcategoria(SubcategoriaIn):
     id: int
-
 class MarcaIn(BaseModel):
     nombre: str
 class Marca(MarcaIn):
     id: int
-
 class EspecieIn(BaseModel):
     nombre: str
 class Especie(EspecieIn):
     id: int
-
 class EtapaIn(BaseModel):
     nombre: str
 class Etapa(EtapaIn):
     id: int
-
 class LineaIn(BaseModel):
     nombre: str
 class Linea(LineaIn):
     id: int
-
 class SucursalIn(BaseModel):
     nombre: str
     direccion: Optional[str] = None
 class SucursalOut(SucursalIn):
     id: int
 
-# === CLIENTES (NUEVO) ===
+# === CLIENTES ===
 class ClienteIn(BaseModel):
     nombre: str
     telefono: Optional[str] = None
     direccion: Optional[str] = None
     notas: Optional[str] = None
-
 class Cliente(ClienteIn):
     id: int
 
-# === PRODUCTO (ACTUALIZADO) ===
+# === PRODUCTO (ACTUALIZADO CON TU LÓGICA FINAL) ===
 class ProductoIn(BaseModel):
     nombre: str
+    descripcion: Optional[str] = None
     sku: Optional[str] = None
     codigo_barras: Optional[str] = None
     
     # Clasificación
-    tipo_producto: str = "Alimento" # Default
+    tipo_producto: str = "Alimento" 
     
     # Relaciones
     marca_id: Optional[int] = None
@@ -67,38 +61,34 @@ class ProductoIn(BaseModel):
     etapa_id: Optional[int] = None
     linea_id: Optional[int] = None
     
-    # Datos Venta
-    unidad: Optional[str] = None
-    peso_bulto_kg: Optional[float] = None # Ahora float para kilos exactos
+    # Lógica de Venta
+    unidad_medida: str = "pza"
+    contenido_neto: float = 1.0
+    se_vende_a_granel: bool = False
     
     # Precios
-    precio_unitario: Optional[float] = None
-    precio_por_kg: Optional[float] = None
-    precio_por_bulto: Optional[float] = None
+    precio_base: float # Precio del paquete cerrado
+    precio_granel: Optional[float] = None # Precio suelto (opcional)
     
-    # Banderas
-    se_vende_por_kilo: bool = False
     activo: bool = True
 
 class Producto(ProductoIn):
     id: int
 
-# === INVENTARIO (ACTUALIZADO A FLOAT) ===
+# === INVENTARIO ===
 class InventarioIn(BaseModel):
     producto_id: int
     sucursal_id: int
-    cantidad: float # 👈 Antes int, ahora float para soportar Kilos
+    cantidad: float 
 
 class Inventario(BaseModel):
     id: int
     producto_id: int
     sucursal_id: int
-    cantidad: float # 👈 Float
+    cantidad: float 
     fecha_actualizacion: str 
-
     class Config:
         from_attributes = True
-
     @classmethod
     def from_orm(cls, obj):
         return cls(
@@ -112,12 +102,26 @@ class Inventario(BaseModel):
 class IngresoInventarioIn(BaseModel):
     producto_id: int
     sucursal_id: int
-    cantidad: float # 👈 Float
+    cantidad: float 
     usuario_id: int
 
 class IngresoInventario(IngresoInventarioIn):
     id: int
-    fecha_actualizacion: str # Lo manejamos como str en la respuesta para ISO format
+    fecha_actualizacion: str 
+
+# === AJUSTE INVENTARIO (AUDITORÍA) ===
+class AjusteInventarioIn(BaseModel):
+    sucursal_id: int
+    usuario_id: int
+    producto_id: int
+    cantidad_sistema: float
+    cantidad_fisica: float
+    motivo: Optional[str] = None
+
+class AjusteInventario(AjusteInventarioIn):
+    id: int
+    diferencia: float
+    fecha: datetime
 
 # === USUARIOS Y VENTAS ===
 class UsuarioIn(BaseModel):
@@ -125,15 +129,14 @@ class UsuarioIn(BaseModel):
     contrasena_hash: str
     rol: str
     sucursal_id: int
-
 class Usuario(UsuarioIn):
     id: int
 
 class VentaIn(BaseModel):
     sucursal_id: int
     usuario_id: int
-    cliente_id: Optional[int] = None # 👈 Nuevo
-    corte_caja_id: Optional[int] = None # 👈 Nuevo (Opcional por ahora)
+    cliente_id: Optional[int] = None 
+    corte_caja_id: Optional[int] = None 
     total: float
     descuento_especial_monto: float = 0.0
     descuento_especial_motivo: Optional[str] = None
@@ -145,8 +148,7 @@ class Venta(VentaIn):
 class VentaDetalleIn(BaseModel):
     venta_id: int
     producto_id: int
-    cantidad: float # 👈 Float
+    cantidad: float
     precio_unitario: float
-
 class VentaDetalle(VentaDetalleIn):
     id: int

@@ -1,23 +1,29 @@
-# routers/productos.py
-
 from fastapi import APIRouter, HTTPException
-from typing import List
-
-# --- Importaciones del proyecto ---
+from typing import List, Optional
 from models import producto
 from schemas import ProductoIn, Producto
-from database import database # Importamos la DB desde nuestro nuevo archivo
+from database import database
 
-# 1. Creamos el router
 router = APIRouter(
-    prefix="/productos", # Todas las rutas aquí empiezan con /productos
-    tags=["Productos"]   # Para agrupar en la documentación /docs
+    prefix="/productos",
+    tags=["Productos"]
 )
 
-# 2. Copiamos tus endpoints, pero con @router y rutas relativas
 @router.get("/", response_model=List[Producto])
-async def obtener_productos():
+async def obtener_productos(
+    tipo: Optional[str] = None, # Filtro por tipo (Alimento, Accesorio...)
+    mostrar_inactivos: bool = False # Filtro soft-delete
+):
     query = producto.select()
+    
+    # 1. Filtro de Activos (Soft Delete)
+    if not mostrar_inactivos:
+        query = query.where(producto.c.activo == True)
+    
+    # 2. Filtro por Tipo de Producto
+    if tipo:
+        query = query.where(producto.c.tipo_producto == tipo)
+        
     return await database.fetch_all(query)
 
 @router.get("/{id}", response_model=Producto)
@@ -30,9 +36,12 @@ async def obtener_producto(id: int):
 
 @router.post("/", response_model=Producto)
 async def crear_producto(prod: ProductoIn):
-    query = producto.insert().values(**prod.model_dump())
+    datos = prod.model_dump()
+    # Forzamos activo al crear
+    datos["activo"] = True 
+    query = producto.insert().values(**datos)
     last_id = await database.execute(query)
-    return {**prod.model_dump(), "id": last_id}
+    return {**datos, "id": last_id}
 
 @router.put("/{id}", response_model=Producto)
 async def actualizar_producto(id: int, prod: ProductoIn):
@@ -44,8 +53,11 @@ async def actualizar_producto(id: int, prod: ProductoIn):
 
 @router.delete("/{id}")
 async def eliminar_producto(id: int):
-    query = producto.delete().where(producto.c.id == id)
+    # Soft Delete: Solo cambiamos el estado, no borramos
+    query = producto.update().where(producto.c.id == id).values(activo=False)
     result = await database.execute(query)
+    
     if result == 0:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return {"mensaje": "Producto eliminado"}
+        
+    return {"mensaje": "Producto suspendido (soft-delete) exitosamente"}
