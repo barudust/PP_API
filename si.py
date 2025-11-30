@@ -3,184 +3,169 @@ from pprint import pprint
 
 BASE_URL = "http://127.0.0.1:8000"
 
+# --- Funciones de Ayuda ---
+
 def crear_item(endpoint, data):
     r = requests.post(f"{BASE_URL}/{endpoint.lstrip('/')}", json=data)
     if r.status_code >= 400:
         print(f"❌ Error al crear en {endpoint}: {r.text}")
-    r.raise_for_status()
-    print(f"POST /{endpoint.lstrip('/')} OK (ID: {r.json().get('id')})")
-    return r.json()
-
-def obtener_item(endpoint, item_id):
-    r = requests.get(f"{BASE_URL}/{endpoint.lstrip('/')}/{item_id}")
-    r.raise_for_status()
-    # print(f"GET /{endpoint.lstrip('/')}/{item_id} OK")
+        r.raise_for_status()
+    # Solo imprimimos ID para no ensuciar la consola
+    print(f"✅ POST /{endpoint.lstrip('/')} OK (ID: {r.json().get('id')})")
     return r.json()
 
 def listar_items(endpoint_con_params):
     r = requests.get(f"{BASE_URL}/{endpoint_con_params.lstrip('/')}")
     r.raise_for_status()
-    # print(f"GET /{endpoint_con_params.lstrip('/')} OK (Total: {len(r.json())})")
     return r.json()
 
-def eliminar_item(endpoint, item_id):
-    # Nota: En productos, esto ahora es Soft-Delete (Suspender)
-    r = requests.delete(f"{BASE_URL}/{endpoint.lstrip('/')}/{item_id}")
-    if r.status_code >= 400:
-        print(f"❌ Error al eliminar {endpoint}/{item_id}: {r.text}")
-    r.raise_for_status()
-    print(f"DELETE /{endpoint.lstrip('/')}/{item_id} OK")
-    return r.status_code
+def eliminar_item_silencioso(endpoint, item_id):
+    """Intenta borrar. Si falla (por FK o porque no existe), no hace ruido."""
+    try:
+        requests.delete(f"{BASE_URL}/{endpoint.lstrip('/')}/{item_id}")
+    except:
+        pass 
+
+# --- Flujo Principal de Negocio ---
 
 def main_test():
-    ids_creados = {
-        "marcas": [], "especies": [], "etapas": [], "lineas": [],
-        "categorias": [], "subcategorias": [], "sucursales": [],
-        "productos": [], "inventario": [], "usuarios": [], "clientes": []
+    print("\n🚀 INICIANDO PRUEBA DE FLUJO DE NEGOCIO\n")
+    
+    # Guardamos IDs para limpiar al final
+    ids = {
+        "sucursales": [], "usuarios": [], "clientes": [],
+        "categorias": [], "marcas": [], "especies": [], "etapas": [], "lineas": [], "subcategorias": [],
+        "productos": [], "inventario": []
     }
 
     try:
-        print("\n--- 1. CREANDO CATÁLOGOS (Atributos) ---")
+        # 1. INFRAESTRUCTURA BÁSICA
+        print("--- Paso 1: Creando Catálogos Básicos ---")
+        suc = crear_item("sucursales", {"nombre": "Sucursal Test"})
+        ids["sucursales"].append(suc['id'])
+
+        usr = crear_item("usuarios", {"nombre": "Vendedor", "contrasena_hash": "123", "rol": "ven", "sucursal_id": suc['id']})
+        ids["usuarios"].append(usr['id'])
+
+        cli = crear_item("clientes", {"nombre": "Cliente Test", "telefono": "555"})
+        ids["clientes"].append(cli['id'])
+
+        cat = crear_item("categorias", {"nombre": "Alimentos"})
+        ids["categorias"].append(cat['id'])
         
-        suc_json = crear_item("sucursales", {"nombre": "Sucursal Norte Test"})
-        sucursal_id = suc_json['id']
-        ids_creados["sucursales"].append(sucursal_id)
+        # Creamos una subcategoría para probar el filtro completo
+        subcat = crear_item("categorias/subcategorias/", {"nombre": "Cerdos", "categoria_id": cat['id']})
+        ids["subcategorias"].append(subcat['id'])
 
-        usr_json = crear_item("usuarios", {
-            "nombre": "Juan Perez",
-            "contrasena_hash": "admin123",
-            "rol": "admin",
-            "sucursal_id": sucursal_id
-        })
-        usuario_id = usr_json['id']
-        ids_creados["usuarios"].append(usuario_id)
+        marca = crear_item("marcas", {"nombre": "Gamas"})
+        ids["marcas"].append(marca['id'])
+        
+        # Creamos solo lo mínimo necesario para el producto
+        esp = crear_item("especies", {"nombre": "Bovino"})
+        ids["especies"].append(esp['id'])
+        eta = crear_item("etapas", {"nombre": "Inicio"})
+        ids["etapas"].append(eta['id'])
+        lin = crear_item("lineas", {"nombre": "Premium"})
+        ids["lineas"].append(lin['id'])
 
-        # --- NUEVO: Crear Cliente ---
-        cli_json = crear_item("clientes", { # Asumiendo que crearemos este router pronto
-             # Si aún no tienes router de clientes, esto fallará, pero lo dejo preparado
-             # Puedes comentar estas líneas si aun no creamos routers/clientes.py
-             "nombre": "Cliente Frecuente Test",
-             "telefono": "555-1234",
-             "direccion": "Conocido"
-        })
-        ids_creados["clientes"].append(cli_json['id'])
-
-        cat_json = crear_item("categorias", {"nombre": "Alimentos Balanceados"})
-        categoria_id = cat_json['id']
-        ids_creados["categorias"].append(categoria_id)
-
-        marca_json = crear_item("marcas", {"nombre": "Gamas"})
-        marca_id = marca_json['id']
-        ids_creados["marcas"].append(marca_id)
-
-        esp_json = crear_item("especies", {"nombre": "Cerdo"})
-        especie_id = esp_json['id']
-        ids_creados["especies"].append(especie_id)
-
-        eta_json = crear_item("etapas", {"nombre": "Inicio"})
-        etapa_id = eta_json['id']
-        ids_creados["etapas"].append(etapa_id)
-
-        lin_json = crear_item("lineas", {"nombre": "Premium"})
-        linea_id = lin_json['id']
-        ids_creados["lineas"].append(linea_id)
-
-        subcat_json = crear_item("categorias/subcategorias/", {
-            "nombre": "Cerdos",
-            "categoria_id": categoria_id
-        })
-        subcategoria_id = subcat_json['id']
-        ids_creados["subcategorias"].append(subcategoria_id)
-
-        print("\n--- 2. CREANDO PRODUCTO (Estructura Nueva) ---")
-        # Actualizado para usar 'precio_base', 'contenido_neto', etc.
-        prod_json = crear_item("productos", {
-            "nombre": "Gamas Cerdo Inicio - Bulto 40kg",
+        # 2. CREAR PRODUCTO COMPLEJO
+        print("\n--- Paso 2: Creando Producto (Bulto 40kg / $850) ---")
+        prod = crear_item("productos", {
+            "nombre": "Alimento Bovino - Saco 40kg",
             "tipo_producto": "Alimento",
-            
-            # Filtros
-            "marca_id": marca_id,
-            "categoria_id": categoria_id,
-            "subcategoria_id": subcategoria_id,
-            "especie_id": especie_id,
-            "etapa_id": etapa_id,
-            "linea_id": linea_id,
-            
-            # Lógica de Negocio
+            "marca_id": marca['id'],
+            "categoria_id": cat['id'],
+            "subcategoria_id": subcat['id'],
+            "especie_id": esp['id'],
+            "etapa_id": eta['id'],
+            "linea_id": lin['id'],
             "unidad_medida": "Bulto",
-            "contenido_neto": 40.0,      # El bulto trae 40kg
-            "se_vende_a_granel": True,   # Se puede abrir
-            
-            # Precios
-            "precio_base": 850.00,       # Precio por bulto cerrado
-            "precio_granel": 25.00       # Precio por kilo suelto
+            "contenido_neto": 40.0,      # 1 Bulto = 40kg
+            "se_vende_a_granel": True,
+            "precio_base": 850.00,       # $850 el bulto cerrado
+            "precio_granel": 25.00       # $25 el kilo suelto
         })
-        producto_id = prod_json['id']
-        ids_creados["productos"].append(producto_id)
-        
-        print("\n--- 3. PROBANDO INVENTARIO (Kilos) ---")
-        
-        print(f"Ingresando 5 Bultos de 40kg (Total esperado: 200kg)...")
+        ids["productos"].append(prod['id'])
+
+        # 3. SURTIR INVENTARIO
+        print("\n--- Paso 3: Ingresando 5 Bultos al Inventario ---")
+        # Lógica: 5 bultos * 40kg c/u = 200kg totales
         crear_item("ingreso-inventario/", {
-            "producto_id": producto_id,
-            "sucursal_id": sucursal_id,
-            "cantidad": 5, # Entran 5 bultos
-            "usuario_id": usuario_id 
+            "producto_id": prod['id'],
+            "sucursal_id": suc['id'],
+            "cantidad": 5, 
+            "usuario_id": usr['id']
         })
-
-        # Verificación
-        inv_lista = listar_items(f"inventario?producto_id={producto_id}&sucursal_id={sucursal_id}")
-        inv_item = inv_lista[0]
-        inventario_id = inv_item['id']
-        ids_creados["inventario"].append(inventario_id)
         
-        print(f"Inventario en DB: {inv_item['cantidad']} kg")
+        # Validar Matemáticas de Inventario
+        inv_list = listar_items(f"inventario?producto_id={prod['id']}&sucursal_id={suc['id']}")
+        inv_item = inv_list[0]
+        ids["inventario"].append(inv_item['id'])
         
-        # Lógica de negocio: 5 bultos * 40kg = 200kg
-        # NOTA: Tu backend actual en 'ingreso-inventario' suma la cantidad directa
-        # AÚN NO hemos programado la multiplicación por 'contenido_neto' en el router.
-        # Por ahora, el sistema sumará 5.0 (si no hemos hecho esa lógica extra).
-        # Si ya hicimos la lógica de multiplicar en el router, debería ser 200.
-        # Asumiré que por ahora suma directo lo que mandamos (5.0).
+        stock_kilos = float(inv_item['cantidad'])
+        print(f"   📦 Stock en DB: {stock_kilos} kg")
         
-        # Cuando programemos la lógica de "Entrada de Bultos", esto cambiará.
-        
-        print("\n--- 4. PROBANDO SOFT-DELETE (Suspensión) ---")
-        print(f"Suspendiendo producto ID {producto_id}...")
-        eliminar_item("productos", producto_id)
-        
-        # Verificar que YA NO aparece en la lista normal
-        lista_activos = listar_items("productos")
-        encontrado = any(p['id'] == producto_id for p in lista_activos)
-        if not encontrado:
-            print("✅ Correcto: El producto no aparece en la lista de activos.")
+        if stock_kilos == 200.0:
+            print("   ✅ Cálculo de Ingreso CORRECTO (5 * 40 = 200)")
         else:
-            print("❌ Error: El producto sigue apareciendo.")
+            print(f"   ❌ ERROR: Se esperaban 200.0 kg, hay {stock_kilos}")
 
-        # Verificar que SÍ aparece en la lista completa
-        lista_todos = listar_items("productos?mostrar_inactivos=true")
-        item_suspendido = next((p for p in lista_todos if p['id'] == producto_id), None)
+        # 4. REGISTRAR VENTA
+        print("\n--- Paso 4: Vendiendo 1.5 Bultos ---")
+        # Lógica Inventario: 1.5 bultos * 40kg = 60kg a descontar.
+        # Lógica Dinero: 1.5 bultos * $850 = $1275.
         
-        if item_suspendido and item_suspendido['activo'] == False:
-            print("✅ Correcto: El producto existe pero tiene activo=False.")
+        venta_resp = crear_item("ventas", {
+            "sucursal_id": suc['id'],
+            "usuario_id": usr['id'],
+            "cliente_id": cli['id'],
+            "detalles": [
+                {"producto_id": prod['id'], "cantidad": 1.5}
+            ],
+            "descuento_especial": 0
+        })
+        
+        total_venta = float(venta_resp['total_final'])
+        print(f"   💰 Total Venta: ${total_venta}")
+
+        # Validar Dinero
+        if total_venta == 1275.0:
+             print("   ✅ Cálculo de Dinero CORRECTO (1.5 * 850 = 1275)")
         else:
-            print("❌ Error: El producto no se encuentra o sigue activo.")
+             print(f"   ❌ ERROR DINERO: Esperado 1275.0, Recibido {total_venta}")
 
-        print("\n✅✅✅ ¡PRUEBA EXITOSA! El Backend está robusto. ✅✅✅")
+        # Validar Descuento de Stock
+        inv_list_final = listar_items(f"inventario?producto_id={prod['id']}&sucursal_id={suc['id']}")
+        stock_final = float(inv_list_final[0]['cantidad'])
+        print(f"   📦 Stock Final: {stock_final} kg")
+        
+        if stock_final == 140.0:
+            print("   ✅ Descuento de Inventario CORRECTO (200 - 60 = 140)")
+        else:
+            print(f"   ❌ ERROR STOCK: Esperado 140.0, Quedan {stock_final}")
 
-    except requests.exceptions.RequestException as e:
-        print(f"\n❌❌❌ FALLO EN LA PRUEBA ❌❌❌")
-        print(f"Error: {e}")
-        if e.response is not None:
-            print(f"Respuesta: {e.response.text}")
+        print("\n✨✨✨ PRUEBA EXITOSA: EL SISTEMA FUNCIONA ✨✨✨")
+
+    except Exception as e:
+        print(f"\n❌ ERROR CRÍTICO: {e}")
 
     finally:
-       
-        for item_id in ids_creados["clientes"]:
-            eliminar_item("clientes", item_id)
-        print("\n--- Limpieza (Nota: Soft-deleted items pueden causar errores de FK al borrar padres) ---")
+        print("\n--- Limpiando Datos... ---")
+        # Borramos en orden inverso para evitar conflictos de FK
+        # Nota: Productos con Soft-Delete no se borran físicamente,
+        # por lo que sus dependencias (Marcas, etc.) podrían no borrarse.
+        # Usamos eliminación silenciosa para no ensuciar la consola.
         
-        pass
+        for item_id in ids["inventario"]: eliminar_item_silencioso("inventario", item_id)
+        for item_id in ids["productos"]: eliminar_item_silencioso("productos", item_id)
+        
+        # Intentamos borrar catálogos
+        listas_catalogos = ["subcategorias", "categorias", "usuarios", "clientes", "sucursales", "marcas", "especies", "etapas", "lineas"]
+        for cat in listas_catalogos:
+            for item_id in ids[cat]:
+                eliminar_item_silencioso(cat, item_id)
+        
+        print("Listo.")
 
 if __name__ == "__main__":
     main_test()

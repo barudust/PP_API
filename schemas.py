@@ -152,3 +152,28 @@ class VentaDetalleIn(BaseModel):
     precio_unitario: float
 class VentaDetalle(VentaDetalleIn):
     id: int
+
+
+class ReglaDescuentoIn(BaseModel):
+    descripcion: str
+    descuento_porcentaje: float
+    cliente_id: Optional[int] = None
+    marca_id: Optional[int] = None
+    producto_id: Optional[int] = None
+    activo: bool = True
+
+class ReglaDescuento(ReglaDescuentoIn):
+    id: int
+
+# === HISTORIAL (Solo lectura) ===
+class HistorialInventario(BaseModel):
+    id: int
+    fecha: datetime
+    sucursal_id: int
+    usuario_id: int
+    producto_id: int
+    tipo_movimiento: str
+    cantidad_anterior: float
+    cantidad_movida: float
+    cantidad_nueva: float
+    motivo: Optional[str] = None

@@ -1,12 +1,9 @@
-# routers/usuarios.py
-
 from fastapi import APIRouter, HTTPException
 from typing import List
-
-# --- Importaciones del proyecto ---
 from models import usuario
 from schemas import UsuarioIn, Usuario
 from database import database
+from security import get_password_hash # Asegúrate de tener security.py creado
 
 router = APIRouter(
     prefix="/usuarios",
@@ -28,17 +25,32 @@ async def obtener_usuario(id: int):
 
 @router.post("/", response_model=Usuario)
 async def crear_usuario(u: UsuarioIn):
-    query = usuario.insert().values(**u.model_dump())
+    # 1. Convertimos los datos a un diccionario modificable
+    datos_usuario = u.model_dump()
+    
+    # 2. --- EL CAMBIO CLAVE ---
+    # Encriptamos la contraseña antes de enviarla a la base de datos
+    datos_usuario["contrasena_hash"] = get_password_hash(datos_usuario["contrasena_hash"])
+    
+    # 3. Insertamos los datos ya encriptados
+    query = usuario.insert().values(**datos_usuario)
     last_id = await database.execute(query)
-    return {**u.model_dump(), "id": last_id}
+    
+    return {**datos_usuario, "id": last_id}
 
 @router.put("/{id}", response_model=Usuario)
 async def actualizar_usuario(id: int, u: UsuarioIn):
-    query = usuario.update().where(usuario.c.id == id).values(**u.model_dump())
+    # También encriptamos al actualizar, por si el usuario cambia su contraseña
+    datos_usuario = u.model_dump()
+    datos_usuario["contrasena_hash"] = get_password_hash(datos_usuario["contrasena_hash"])
+
+    query = usuario.update().where(usuario.c.id == id).values(**datos_usuario)
     result = await database.execute(query)
+    
     if result == 0:
         raise HTTPException(status_code=404, detail="Usuario no encontrado")
-    return {**u.model_dump(), "id": id}
+    
+    return {**datos_usuario, "id": id}
 
 @router.delete("/{id}")
 async def eliminar_usuario(id: int):

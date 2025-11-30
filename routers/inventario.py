@@ -4,9 +4,11 @@ from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
 from sqlalchemy import select, update
+
+# --- Importaciones del proyecto ---
 from models import inventario, ingreso_inventario, producto
 from schemas import InventarioIn, Inventario, IngresoInventarioIn, IngresoInventario
-from database import database, fecha_local_iso, fecha_local_iso_simple # Importamos las funciones de fecha
+from database import database, fecha_local_iso, fecha_local_iso_simple
 
 router = APIRouter(
     tags=["Inventario"]
@@ -15,10 +17,17 @@ router = APIRouter(
 # === INVENTARIO ===
 
 @router.get("/inventario", response_model=List[Inventario])
-async def obtener_inventario():
+async def obtener_inventario(
+    producto_id: Optional[int] = Query(None),
+    sucursal_id: Optional[int] = Query(None)
+):
     query = inventario.select()
+    if producto_id is not None:
+        query = query.where(inventario.c.producto_id == producto_id)
+    if sucursal_id is not None:
+        query = query.where(inventario.c.sucursal_id == sucursal_id)
+    
     registros = await database.fetch_all(query)
-    # Reutilizamos la lógica de tu 'schemas.py' para formatear
     return [Inventario.from_orm(r) for r in registros]
 
 @router.get("/inventario/{id}", response_model=Inventario)
@@ -27,7 +36,6 @@ async def obtener_inventario_id(id: int):
     r = await database.fetch_one(query)
     if r is None:
         raise HTTPException(status_code=404, detail="Inventario no encontrado")
-    # Reutilizamos la lógica de tu 'schemas.py' para formatear
     return Inventario.from_orm(r)
 
 @router.post("/inventario", response_model=Inventario)
@@ -64,7 +72,7 @@ async def eliminar_inventario(id: int):
 @router.post("/ingreso-inventario/", response_model=IngresoInventario)
 async def ingresar_inventario(data: IngresoInventarioIn):
     
-    # 1. OBTENER DATOS DEL PRODUCTO (Para saber cuánto pesa el bulto)
+    # 1. OBTENER EL PESO DEL BULTO
     query_prod = select(producto).where(producto.c.id == data.producto_id)
     prod_obj = await database.fetch_one(query_prod)
     
@@ -72,10 +80,12 @@ async def ingresar_inventario(data: IngresoInventarioIn):
         raise HTTPException(status_code=404, detail="Producto no encontrado")
 
     # 2. CALCULAR KILOS REALES
-    # Si metes 5 bultos de 40kg, son 200kg.
-    kilos_reales = float(data.cantidad) * float(prod_obj["contenido_neto"])
+    # data.cantidad viene del frontend (ej: 5 bultos)
+    # contenido_neto es Decimal en DB, lo convertimos a float
+    contenido_neto = float(prod_obj["contenido_neto"])
+    kilos_reales = float(data.cantidad) * contenido_neto
 
-    # 3. VERIFICAR SI EXISTE EN INVENTARIO
+    # 3. ACTUALIZAR O CREAR INVENTARIO
     query_inventario = select(inventario).where(
         (inventario.c.producto_id == data.producto_id) &
         (inventario.c.sucursal_id == data.sucursal_id)
@@ -83,8 +93,10 @@ async def ingresar_inventario(data: IngresoInventarioIn):
     result = await database.fetch_one(query_inventario)
 
     if result:
-        # Usamos kilos_reales
-        nueva_cantidad = float(result["cantidad"]) + kilos_reales 
+        # --- CORRECCIÓN CRÍTICA AQUÍ ---
+        # Convertimos result["cantidad"] (Decimal) a float antes de sumar
+        cantidad_actual = float(result["cantidad"])
+        nueva_cantidad = cantidad_actual + kilos_reales
         
         update_query = (
             update(inventario)
@@ -96,7 +108,7 @@ async def ingresar_inventario(data: IngresoInventarioIn):
         )
         await database.execute(update_query)
     else:   
-        # Usamos kilos_reales
+        # Crear nuevo registro
         insert_inventario = inventario.insert().values(
             producto_id=data.producto_id,
             sucursal_id=data.sucursal_id,
@@ -104,6 +116,24 @@ async def ingresar_inventario(data: IngresoInventarioIn):
             fecha_actualizacion=datetime.now(timezone.utc)
         )
         await database.execute(insert_inventario)
+
+    # 4. REGISTRAR EL MOVIMIENTO
+    insert_ingreso = ingreso_inventario.insert().values(
+        producto_id=data.producto_id,
+        sucursal_id=data.sucursal_id,
+        cantidad=data.cantidad, # Guardamos "5 bultos" tal cual para el historial
+        usuario_id=data.usuario_id
+    )
+    id_insertado = await database.execute(insert_ingreso)
+
+    ingreso_query = ingreso_inventario.select().where(ingreso_inventario.c.id == id_insertado)
+    ingreso = await database.fetch_one(ingreso_query)
+    
+    # Formatear fecha para respuesta
+    ingreso_dict = dict(ingreso)
+    ingreso_dict["fecha_actualizacion"] = fecha_local_iso(ingreso_dict["fecha_actualizacion"])
+    
+    return IngresoInventario(**ingreso_dict)
 
 
 @router.get("/ingresos-inventario/")
@@ -129,7 +159,6 @@ async def listar_ingresos_inventario(
 
     resultados = await database.fetch_all(query)
 
-    # Usamos la función de fecha importada
     resultados_formateados = [
         {
             "id": r["id"],

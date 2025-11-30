@@ -1,9 +1,7 @@
 # routers/atributos.py
 
-from fastapi import APIRouter, HTTPException
-from typing import List
-
-# --- Importaciones del proyecto ---
+from fastapi import APIRouter, HTTPException, Query
+from typing import List, Optional
 from models import marca, especie, etapa, linea
 from schemas import ( 
     MarcaIn, Marca, EspecieIn, Especie, 
@@ -11,15 +9,17 @@ from schemas import (
 )
 from database import database
 
-# --- Router principal para todos los atributos ---
 router = APIRouter(
     tags=["Atributos (Marcas, Especies, etc)"]
 )
 
 # === MARCAS ===
 @router.get("/marcas", response_model=List[Marca])
-async def obtener_marcas():
+async def obtener_marcas(q: Optional[str] = Query(None, description="Buscar por nombre")):
     query = marca.select()
+    if q:
+        # Búsqueda insensible a mayúsculas/minúsculas (ilike)
+        query = query.where(marca.c.nombre.ilike(f"%{q}%"))
     return await database.fetch_all(query)
 
 @router.get("/marcas/{id}", response_model=Marca)
@@ -55,8 +55,10 @@ async def eliminar_marca(id: int):
 
 # === ESPECIES ===
 @router.get("/especies", response_model=List[Especie])
-async def obtener_especies():
+async def obtener_especies(q: Optional[str] = Query(None)):
     query = especie.select()
+    if q:
+        query = query.where(especie.c.nombre.ilike(f"%{q}%"))
     return await database.fetch_all(query)
 
 @router.get("/especies/{id}", response_model=Especie)
@@ -92,8 +94,10 @@ async def eliminar_especie(id: int):
 
 # === ETAPAS ===
 @router.get("/etapas", response_model=List[Etapa])
-async def obtener_etapas():
+async def obtener_etapas(q: Optional[str] = Query(None)):
     query = etapa.select()
+    if q:
+        query = query.where(etapa.c.nombre.ilike(f"%{q}%"))
     return await database.fetch_all(query)
 
 @router.get("/etapas/{id}", response_model=Etapa)
@@ -129,8 +133,10 @@ async def eliminar_etapa(id: int):
 
 # === LÍNEAS DE PRODUCTOS ===
 @router.get("/lineas", response_model=List[Linea])
-async def obtener_lineas():
+async def obtener_lineas(q: Optional[str] = Query(None)):
     query = linea.select()
+    if q:
+        query = query.where(linea.c.nombre.ilike(f"%{q}%"))
     return await database.fetch_all(query)
 
 @router.get("/lineas/{id}", response_model=Linea)
@@ -162,3 +168,15 @@ async def eliminar_linea(id: int):
     if result == 0:
         raise HTTPException(status_code=404, detail="Línea no encontrada")
     return {"mensaje": "Línea eliminada"}
+
+
+
+@router.get("/tipos-producto", response_model=List[str])
+async def obtener_tipos_producto():
+    """Devuelve la lista de tipos de producto permitidos."""
+    return ["Alimento", "Materia Prima", "Accesorio", "Medicina", "Agricola"]
+
+@router.get("/unidades-medida", response_model=List[str])
+async def obtener_unidades_medida():
+    """Devuelve la lista de unidades de medida permitidas."""
+    return ["pza", "kg", "lt", "bulto", "caja", "bote", "sobre", "bolsa"]
