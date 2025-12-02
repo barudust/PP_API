@@ -2,10 +2,10 @@
 
 from fastapi import APIRouter, HTTPException, Query
 from typing import List, Optional
-from models import marca, especie, etapa, linea
+from models import marca, especie, etapa
 from schemas import ( 
     MarcaIn, Marca, EspecieIn, Especie, 
-    EtapaIn, Etapa, LineaIn, Linea 
+    EtapaIn, Etapa,
 )
 from database import database
 
@@ -130,44 +130,6 @@ async def eliminar_etapa(id: int):
         raise HTTPException(status_code=404, detail="Etapa no encontrada")
     return {"mensaje": "Etapa eliminada"}
 
-
-# === LÍNEAS DE PRODUCTOS ===
-@router.get("/lineas", response_model=List[Linea])
-async def obtener_lineas(q: Optional[str] = Query(None)):
-    query = linea.select()
-    if q:
-        query = query.where(linea.c.nombre.ilike(f"%{q}%"))
-    return await database.fetch_all(query)
-
-@router.get("/lineas/{id}", response_model=Linea)
-async def obtener_linea(id: int):
-    query = linea.select().where(linea.c.id == id)
-    result = await database.fetch_one(query)
-    if result is None:
-        raise HTTPException(status_code=404, detail="Línea no encontrada")
-    return result
-
-@router.post("/lineas", response_model=Linea)
-async def crear_linea(l: LineaIn):
-    query = linea.insert().values(**l.model_dump())
-    last_id = await database.execute(query)
-    return {**l.model_dump(), "id": last_id}
-
-@router.put("/lineas/{id}", response_model=Linea)
-async def actualizar_linea(id: int, l: LineaIn):
-    query = linea.update().where(linea.c.id == id).values(**l.model_dump())
-    result = await database.execute(query)
-    if result == 0:
-        raise HTTPException(status_code=404, detail="Línea no encontrada")
-    return {**l.model_dump(), "id": id}
-
-@router.delete("/lineas/{id}")
-async def eliminar_linea(id: int):
-    query = linea.delete().where(linea.c.id == id)
-    result = await database.execute(query)
-    if result == 0:
-        raise HTTPException(status_code=404, detail="Línea no encontrada")
-    return {"mensaje": "Línea eliminada"}
 
 
 

@@ -71,7 +71,7 @@ async def abrir_caja(data: AperturaCajaReq):
 
 @router.get("/actual/{usuario_id}", response_model=CorteResponse)
 async def obtener_corte_actual(usuario_id: int):
-    """Obtiene el estado actual del corte (cuánto se ha vendido hasta ahora)"""
+    """Obtiene el estado actual del corte"""
     
     # 1. Buscar corte abierto
     query = select(corte_caja).where(
@@ -82,8 +82,7 @@ async def obtener_corte_actual(usuario_id: int):
     if not corte:
         raise HTTPException(404, "No hay turno abierto para este usuario")
         
-    # 2. Calcular ventas acumuladas en tiempo real
-    # Sumamos todas las ventas asociadas a este corte
+    # 2. Calcular ventas acumuladas
     query_ventas = select(func.sum(venta.c.total)).where(venta.c.corte_caja_id == corte['id'])
     total_ventas = await database.fetch_val(query_ventas) or 0.0
     
@@ -113,19 +112,18 @@ async def cerrar_caja(data: CierreCajaReq):
     total_ventas = await database.fetch_val(query_ventas) or 0.0
     
     esperado = float(corte['fondo_inicial']) + float(total_ventas)
-    diferencia = data.efectivo_real - esperado # Si es negativo, falta dinero. Si es positivo, sobra.
+    diferencia = data.efectivo_real - esperado 
     
-    # Fondo para mañana = Lo que hay real - Lo que se lleva el dueño
     fondo_siguiente = data.efectivo_real - data.monto_retirado
     
     fecha_cierre = datetime.now(timezone.utc)
     
-    # 3. Actualizar DB
+    # 3. Actualizar DB (CORREGIDO: efectivo_real en lugar de efectivo_final_real)
     upd_query = corte_caja.update().where(corte_caja.c.id == data.corte_id).values(
         fecha_cierre=fecha_cierre,
         ventas_totales=total_ventas,
         efectivo_esperado=esperado,
-        efectivo_final_real=data.efectivo_real,
+        efectivo_real=data.efectivo_real, # <--- AQUÍ ESTABA EL ERROR
         diferencia=diferencia,
         monto_retirado=data.monto_retirado,
         fondo_siguiente=fondo_siguiente,

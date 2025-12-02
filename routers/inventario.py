@@ -3,10 +3,10 @@
 from fastapi import APIRouter, HTTPException, Query
 from typing import Optional, List
 from datetime import datetime, timezone, timedelta
-from sqlalchemy import select, update
+from sqlalchemy import select, update, func
 
 # --- Importaciones del proyecto ---
-from models import inventario, ingreso_inventario, producto
+from models import inventario, ingreso_inventario, producto, sucursal
 from schemas import InventarioIn, Inventario, IngresoInventarioIn, IngresoInventario
 from database import database, fecha_local_iso, fecha_local_iso_simple
 
@@ -171,3 +171,27 @@ async def listar_ingresos_inventario(
         for r in resultados
     ]
     return resultados_formateados
+
+
+@router.get("/inventario/reporte-sucursal/{sucursal_id}")
+async def reporte_inventario_sucursal(sucursal_id: int):
+    query = select(
+        producto.c.id,
+        producto.c.nombre,
+        producto.c.unidad_medida,
+        producto.c.codigo_barras,
+        producto.c.precio_base,
+        producto.c.contenido_neto, # <--- ¡AGREGAR ESTA LÍNEA!
+        func.coalesce(inventario.c.cantidad, 0).label("cantidad_actual")
+    ).select_from(
+        producto.outerjoin(
+            inventario, 
+            (inventario.c.producto_id == producto.c.id) & 
+            (inventario.c.sucursal_id == sucursal_id)
+        )
+    ).where(
+        producto.c.activo == True
+    ).order_by(producto.c.nombre)
+    
+    resultados = await database.fetch_all(query)
+    return [dict(r) for r in resultados]

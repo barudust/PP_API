@@ -1,8 +1,8 @@
-"""inicial_completa
+"""schema_final_sin_lineas
 
-Revision ID: 4cf3fc25bfd0
+Revision ID: d580a91a9b9e
 Revises: 
-Create Date: 2025-11-21 18:55:12.799350
+Create Date: 2025-12-02 02:06:43.786511
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '4cf3fc25bfd0'
+revision: str = 'd580a91a9b9e'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -47,12 +47,6 @@ def upgrade() -> None:
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('nombre')
     )
-    op.create_table('linea',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('nombre', sa.Text(), nullable=False),
-    sa.PrimaryKeyConstraint('id'),
-    sa.UniqueConstraint('nombre')
-    )
     op.create_table('marca',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nombre', sa.Text(), nullable=False),
@@ -65,15 +59,6 @@ def upgrade() -> None:
     sa.Column('direccion', sa.Text(), nullable=True),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('nombre')
-    )
-    op.create_table('linea_marca',
-    sa.Column('id', sa.Integer(), nullable=False),
-    sa.Column('linea_id', sa.Integer(), nullable=True),
-    sa.Column('marca_id', sa.Integer(), nullable=True),
-    sa.Column('nombre_publico', sa.Text(), nullable=False),
-    sa.ForeignKeyConstraint(['linea_id'], ['linea.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['marca_id'], ['marca.id'], ondelete='CASCADE'),
-    sa.PrimaryKeyConstraint('id')
     )
     op.create_table('subcategoria',
     sa.Column('id', sa.Integer(), nullable=False),
@@ -98,8 +83,12 @@ def upgrade() -> None:
     sa.Column('fecha_apertura', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
     sa.Column('fecha_cierre', sa.DateTime(timezone=True), nullable=True),
     sa.Column('fondo_inicial', sa.Numeric(precision=10, scale=2), nullable=False),
-    sa.Column('efectivo_final_real', sa.Numeric(precision=10, scale=2), nullable=True),
-    sa.Column('varianza', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('ventas_totales', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('efectivo_esperado', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('efectivo_real', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('diferencia', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('monto_retirado', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('fondo_siguiente', sa.Numeric(precision=10, scale=2), nullable=True),
     sa.Column('comentarios', sa.Text(), nullable=True),
     sa.ForeignKeyConstraint(['sucursal_id'], ['sucursal.id'], ),
     sa.ForeignKeyConstraint(['usuario_id'], ['usuario.id'], ),
@@ -108,28 +97,59 @@ def upgrade() -> None:
     op.create_table('producto',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nombre', sa.Text(), nullable=False),
+    sa.Column('tipo_producto', sa.Text(), server_default='Alimento', nullable=False),
     sa.Column('sku', sa.Text(), nullable=True),
     sa.Column('codigo_barras', sa.Text(), nullable=True),
-    sa.Column('tipo_producto', sa.Text(), server_default='Alimento', nullable=False),
+    sa.Column('descripcion', sa.Text(), nullable=True),
     sa.Column('marca_id', sa.Integer(), nullable=True),
     sa.Column('categoria_id', sa.Integer(), nullable=True),
     sa.Column('subcategoria_id', sa.Integer(), nullable=True),
     sa.Column('especie_id', sa.Integer(), nullable=True),
     sa.Column('etapa_id', sa.Integer(), nullable=True),
-    sa.Column('linea_id', sa.Integer(), nullable=True),
-    sa.Column('unidad', sa.Text(), nullable=True),
-    sa.Column('peso_bulto_kg', sa.Integer(), nullable=True),
-    sa.Column('precio_unitario', sa.Numeric(precision=10, scale=2), nullable=True),
-    sa.Column('precio_por_kg', sa.Numeric(precision=10, scale=2), nullable=True),
-    sa.Column('precio_por_bulto', sa.Numeric(precision=10, scale=2), nullable=True),
-    sa.Column('se_vende_por_kilo', sa.Boolean(), server_default='false', nullable=False),
-    sa.Column('activo', sa.Boolean(), server_default='true', nullable=False),
+    sa.Column('unidad_medida', sa.Text(), server_default='pza', nullable=False),
+    sa.Column('contenido_neto', sa.Numeric(precision=10, scale=3), server_default='1.0', nullable=False),
+    sa.Column('se_vende_a_granel', sa.Boolean(), server_default='false', nullable=False),
+    sa.Column('precio_base', sa.Numeric(precision=10, scale=2), nullable=False),
+    sa.Column('precio_granel', sa.Numeric(precision=10, scale=2), nullable=True),
+    sa.Column('activo', sa.Boolean(), nullable=True),
+    sa.Column('stock_minimo', sa.Numeric(precision=12, scale=3), nullable=True),
     sa.ForeignKeyConstraint(['categoria_id'], ['categoria.id'], ),
     sa.ForeignKeyConstraint(['especie_id'], ['especie.id'], ),
     sa.ForeignKeyConstraint(['etapa_id'], ['etapa.id'], ),
-    sa.ForeignKeyConstraint(['linea_id'], ['linea.id'], ),
-    sa.ForeignKeyConstraint(['marca_id'], ['marca.id'], ondelete='CASCADE'),
-    sa.ForeignKeyConstraint(['subcategoria_id'], ['subcategoria.id'], ondelete='SET NULL'),
+    sa.ForeignKeyConstraint(['marca_id'], ['marca.id'], ),
+    sa.ForeignKeyConstraint(['subcategoria_id'], ['subcategoria.id'], ),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('sku')
+    )
+    op.create_table('ajuste_inventario',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('sucursal_id', sa.Integer(), nullable=True),
+    sa.Column('usuario_id', sa.Integer(), nullable=True),
+    sa.Column('producto_id', sa.Integer(), nullable=True),
+    sa.Column('fecha', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('cantidad_sistema', sa.Numeric(precision=12, scale=3), nullable=False),
+    sa.Column('cantidad_fisica', sa.Numeric(precision=12, scale=3), nullable=False),
+    sa.Column('diferencia', sa.Numeric(precision=12, scale=3), nullable=False),
+    sa.Column('motivo', sa.Text(), nullable=True),
+    sa.ForeignKeyConstraint(['producto_id'], ['producto.id'], ),
+    sa.ForeignKeyConstraint(['sucursal_id'], ['sucursal.id'], ),
+    sa.ForeignKeyConstraint(['usuario_id'], ['usuario.id'], ),
+    sa.PrimaryKeyConstraint('id')
+    )
+    op.create_table('historial_inventario',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('fecha', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('sucursal_id', sa.Integer(), nullable=False),
+    sa.Column('usuario_id', sa.Integer(), nullable=False),
+    sa.Column('producto_id', sa.Integer(), nullable=False),
+    sa.Column('tipo_movimiento', sa.Text(), nullable=False),
+    sa.Column('cantidad_anterior', sa.Numeric(precision=12, scale=3), nullable=False),
+    sa.Column('cantidad_movida', sa.Numeric(precision=12, scale=3), nullable=False),
+    sa.Column('cantidad_nueva', sa.Numeric(precision=12, scale=3), nullable=False),
+    sa.Column('motivo', sa.Text(), nullable=True),
+    sa.ForeignKeyConstraint(['producto_id'], ['producto.id'], ),
+    sa.ForeignKeyConstraint(['sucursal_id'], ['sucursal.id'], ),
+    sa.ForeignKeyConstraint(['usuario_id'], ['usuario.id'], ),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_table('ingreso_inventario',
@@ -204,14 +224,14 @@ def downgrade() -> None:
     op.drop_table('regla_descuento')
     op.drop_table('inventario')
     op.drop_table('ingreso_inventario')
+    op.drop_table('historial_inventario')
+    op.drop_table('ajuste_inventario')
     op.drop_table('producto')
     op.drop_table('corte_caja')
     op.drop_table('usuario')
     op.drop_table('subcategoria')
-    op.drop_table('linea_marca')
     op.drop_table('sucursal')
     op.drop_table('marca')
-    op.drop_table('linea')
     op.drop_table('etapa')
     op.drop_table('especie')
     op.drop_table('cliente')

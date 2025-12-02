@@ -24,10 +24,7 @@ class EtapaIn(BaseModel):
     nombre: str
 class Etapa(EtapaIn):
     id: int
-class LineaIn(BaseModel):
-    nombre: str
-class Linea(LineaIn):
-    id: int
+
 class SucursalIn(BaseModel):
     nombre: str
     direccion: Optional[str] = None
@@ -59,7 +56,6 @@ class ProductoIn(BaseModel):
     subcategoria_id: Optional[int] = None
     especie_id: Optional[int] = None
     etapa_id: Optional[int] = None
-    linea_id: Optional[int] = None
     
     # Lógica de Venta
     unidad_medida: str = "pza"
@@ -71,6 +67,7 @@ class ProductoIn(BaseModel):
     precio_granel: Optional[float] = None # Precio suelto (opcional)
     
     activo: bool = True
+    stock_minimo: float = 5.0
 
 class Producto(ProductoIn):
     id: int

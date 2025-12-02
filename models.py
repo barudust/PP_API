@@ -43,21 +43,6 @@ etapa = Table(
     Column("nombre", Text, nullable=False, unique=True)
 )
 
-linea = Table(
-    "linea",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("nombre", Text, nullable=False, unique=True)
-)
-
-linea_marca = Table(
-    "linea_marca",
-    metadata,
-    Column("id", Integer, primary_key=True),
-    Column("linea_id", Integer, ForeignKey("linea.id", ondelete="CASCADE")),
-    Column("marca_id", Integer, ForeignKey("marca.id", ondelete="CASCADE")),
-    Column("nombre_publico", Text, nullable=False),
-)
 
 # ==========================================
 # 2. UBICACIONES Y USUARIOS
@@ -116,7 +101,6 @@ producto = Table(
     Column("subcategoria_id", Integer, ForeignKey("subcategoria.id")),
     Column("especie_id", Integer, ForeignKey("especie.id")),
     Column("etapa_id", Integer, ForeignKey("etapa.id")),
-    Column("linea_id", Integer, ForeignKey("linea.id")),
     
     # Lógica de Peso y Venta
     Column("unidad_medida", Text, nullable=False, server_default='pza'), # 'Bulto', 'Bote', 'Pieza'
@@ -127,7 +111,8 @@ producto = Table(
     Column("precio_base", Numeric(10, 2), nullable=False),   # Precio del paquete cerrado (Bulto/Pieza)
     Column("precio_granel", Numeric(10, 2), nullable=True),  # Precio por unidad suelta (Kilo/Tableta)
     
-    Column("activo", Boolean, default=True) # Soft Delete
+    Column("activo", Boolean, default=True), # Soft Delete
+    Column("stock_minimo", Numeric(12, 3), default=5.0)
 )
 
 # ==========================================

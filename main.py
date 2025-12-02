@@ -6,7 +6,7 @@ from contextlib import asynccontextmanager
 
 # --- ¡Nuevas importaciones! ---
 from database import database 
-from routers import productos, categorias, atributos, inventario, sucursales, usuarios, clientes, ventas, auth, corte, descuentos, auditoria
+from routers import productos, categorias, atributos, inventario, sucursales, usuarios, clientes, ventas, auth, corte, descuentos, auditoria, informes
 # ... (tu lifespan se queda igual) ...
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -39,4 +39,5 @@ app.include_router(ventas.router)
 app.include_router(corte.router)
 app.include_router(descuentos.router)
 app.include_router(auditoria.router)
+app.include_router(informes.router)
 print("Routers incluidos. Iniciando app.")
