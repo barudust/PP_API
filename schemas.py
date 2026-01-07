@@ -174,3 +174,10 @@ class HistorialInventario(BaseModel):
     cantidad_movida: float
     cantidad_nueva: float
     motivo: Optional[str] = None
+
+class ProductoUpdate(BaseModel):
+    nombre: Optional[str] = None
+    descripcion: Optional[str] = None
+    precio: Optional[float] = None
+    stock: Optional[int] = None
+    tipo_producto: Optional[str] = None

@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from models import producto
-from schemas import ProductoIn, Producto
+from schemas import ProductoIn, Producto, ProductoUpdate
 from database import database
 
 router = APIRouter(
@@ -50,6 +50,25 @@ async def actualizar_producto(id: int, prod: ProductoIn):
     if result == 0:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
     return {**prod.model_dump(), "id": id}
+
+@router.patch("/{id}", response_model=Producto)
+async def actualizar_parcial_producto(id: int, prod: ProductoUpdate): # <--- CAMBIO AQUÍ
+    # 1. Extraemos solo los datos que SÍ enviaste
+    datos_actualizar = prod.model_dump(exclude_unset=True)
+    
+    if not datos_actualizar:
+        raise HTTPException(status_code=400, detail="No se enviaron datos para actualizar")
+
+    # 2. Ejecutamos la actualización en BD
+    query = producto.update().where(producto.c.id == id).values(**datos_actualizar)
+    result = await database.execute(query)
+    
+    if result == 0:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    
+    # 3. Recuperamos el producto actualizado
+    query_get = producto.select().where(producto.c.id == id)
+    return await database.fetch_one(query_get)
 
 @router.delete("/{id}")
 async def eliminar_producto(id: int):
