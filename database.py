@@ -4,7 +4,7 @@ from databases import Database
 from zoneinfo import ZoneInfo  # Python 3.9+
 
 # --- Tu configuración de conexión ---
-DATABASE_URL = "postgresql+asyncpg://postgres:1234@localhost/negocio"
+DATABASE_URL = "postgresql+asyncpg://postgres:1234@localhost:5433/negocio"
 database = Database(DATABASE_URL)
 
 # --- Funciones de Utilidad de Fechas ---
