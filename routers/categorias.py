@@ -15,6 +15,7 @@ router = APIRouter(
 )
 
 @router.get("/", response_model=List[Categoria])
+@router.get("", response_model=List[Categoria])
 async def obtener_categorias():
     query = categoria.select()
     return await database.fetch_all(query)

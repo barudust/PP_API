@@ -71,6 +71,7 @@ class ProductoIn(BaseModel):
 
 class Producto(ProductoIn):
     id: int
+    stock_actual: Optional[float] = 0.0
 
 # === INVENTARIO ===
 class InventarioIn(BaseModel):
@@ -178,6 +179,15 @@ class HistorialInventario(BaseModel):
 class ProductoUpdate(BaseModel):
     nombre: Optional[str] = None
     descripcion: Optional[str] = None
-    precio: Optional[float] = None
-    stock: Optional[int] = None
     tipo_producto: Optional[str] = None
+    precio_base: Optional[float] = None    
+    stock_minimo: Optional[float] = None   
+    contenido_neto: Optional[float] = None 
+    unidad_medida: Optional[str] = None
+    stock: Optional[float] = None
+
+class TipoProductoIn(BaseModel):
+    nombre: str
+
+class TipoProducto(TipoProductoIn):
+    id: int

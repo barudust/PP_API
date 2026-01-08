@@ -14,7 +14,9 @@ async def lifespan(app: FastAPI):
     yield
     await database.disconnect()
 
-app = FastAPI(lifespan=lifespan)
+# En main.py cambia la línea donde creas la app:
+
+app = FastAPI(lifespan=lifespan, redirect_slashes=False) # <--- Agrega esto
 
 # ... (tu middleware se queda igual) ...
 app.add_middleware(

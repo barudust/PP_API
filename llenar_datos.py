@@ -32,12 +32,10 @@ def crear(endpoint, data):
         return None
 
 def main():
-    print("\n🌱 POBLANDO BASE DE DATOS (SIN REDIRECCIONES) 🌱\n")
+    print("\n🌱 POBLANDO BASE DE DATOS (CATÁLOGOS DINÁMICOS) 🌱\n")
 
     # 1. INFRAESTRUCTURA
     suc_id = crear("sucursales", {"nombre": "Sucursal Centro"})
-    
-    # Si la sucursal ya existía, intentamos obtener su ID (suponiendo que es 1 para el script)
     if not suc_id: suc_id = 1 
 
     usr_id = crear("usuarios", {
@@ -55,11 +53,10 @@ def main():
     cat_mp = crear("categorias", {"nombre": "Materia Prima"})
     cat_med = crear("categorias", {"nombre": "Farmacia"})
 
-    # Subcategorías
-    # Nota: Si falla la categoría (por ya existir), hardcodeamos IDs comunes para seguir probando
     cat_alim = cat_alim if cat_alim else 1
     cat_mp = cat_mp if cat_mp else 3
     
+    # Subcategorías
     sub_granos = crear("categorias/subcategorias", {"nombre": "Granos", "categoria_id": cat_mp})
     sub_perro = crear("categorias/subcategorias", {"nombre": "Perro", "categoria_id": cat_alim})
     
@@ -67,24 +64,39 @@ def main():
     mar_gamas = crear("marcas", {"nombre": "Gamas"})
     mar_nupec = crear("marcas", {"nombre": "Nupec"})
     mar_bayer = crear("marcas", {"nombre": "Bayer"})
+    mar_gamas = mar_gamas if mar_gamas else 1
+
+    # ==========================================
+    # NUEVAS ADICIONES (TIPOS, ESPECIES, ETAPAS)
+    # ==========================================
     
-    # Especies y Etapas
+    # Tipos de Producto (Nuevo catálogo dinámico)
+    tip_alim = crear("tipos-producto", {"nombre": "Alimento"})
+    tip_acc = crear("tipos-producto", {"nombre": "Accesorio"})
+    tip_farm = crear("tipos-producto", {"nombre": "Farmacia"})
+    tip_hig = crear("tipos-producto", {"nombre": "Higiene"})
+
+    # Especies
     esp_cerdo = crear("especies", {"nombre": "Cerdo"})
     esp_perro = crear("especies", {"nombre": "Perro"})
+    esp_gato = crear("especies", {"nombre": "Gato"})
+    esp_ave = crear("especies", {"nombre": "Ave"})
+    esp_cerdo = esp_cerdo if esp_cerdo else 1
+
+    # Etapas
     eta_inicio = crear("etapas", {"nombre": "Inicio"})
     eta_adulto = crear("etapas", {"nombre": "Adulto"})
+    eta_cachorro = crear("etapas", {"nombre": "Cachorro"})
+    eta_senior = crear("etapas", {"nombre": "Senior"})
+    eta_inicio = eta_inicio if eta_inicio else 1
 
     # 4. PRODUCTOS
-    # IDs seguros para pruebas (si falló la creación anterior)
-    mar_gamas = mar_gamas if mar_gamas else 1
     sub_granos = sub_granos if sub_granos else 1
-    esp_cerdo = esp_cerdo if esp_cerdo else 1
-    eta_inicio = eta_inicio if eta_inicio else 1
     
     # A. ALIMENTO
     prod1 = crear("productos", {
         "nombre": "Gamas Cerdo Inicio - 40kg",
-        "tipo_producto": "Alimento",
+        "tipo_producto": "Alimento", # Aquí podrías pasar el string o el ID según tu lógica final
         "marca_id": mar_gamas,
         "categoria_id": cat_alim,
         "especie_id": esp_cerdo,
@@ -113,11 +125,9 @@ def main():
 
     # 5. INVENTARIO
     if prod1 and prod2:
-        # Surtir
         crear("ingreso-inventario", {"producto_id": prod1, "sucursal_id": suc_id, "cantidad": 10, "usuario_id": usr_id}) 
         crear("ingreso-inventario", {"producto_id": prod2, "sucursal_id": suc_id, "cantidad": 50, "usuario_id": usr_id})
         
-        # Abrir caja (si no estaba abierta)
         try:
             crear("corte/abrir", {"sucursal_id": suc_id, "usuario_id": usr_id, "fondo_inicial": 1000})
         except:

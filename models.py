@@ -255,3 +255,10 @@ venta_detalle = Table(
     Column("cantidad", Numeric(12, 3), nullable=False), 
     Column("precio_unitario", Numeric(10, 2), nullable=False)
 )
+
+tipo_producto = Table(
+    "tipo_producto",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("nombre", Text, nullable=False, unique=True)
+)
