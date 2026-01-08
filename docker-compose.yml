@@ -9,7 +9,7 @@ services:
       POSTGRES_PASSWORD: 1234  # La misma contraseña que tienes en tu código
       POSTGRES_DB: negocio
     ports:
-      - "5432:5432"  # Expone el puerto para que tu FastAPI lo vea
+      - "5433:5432"  # Expone el puerto para que tu FastAPI lo vea
     volumes:
       - postgres_data:/var/lib/postgresql/data # Esto guarda los datos aunque apagues la PC
 
