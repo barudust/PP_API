@@ -7,24 +7,24 @@ from sqlalchemy import select
 
 router = APIRouter(tags=["Autenticación"])
 
+# En auth.py
 @router.post("/token")
 async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends()):
-    # 1. Buscar usuario por nombre
+    # ... código de búsqueda ...
     query = select(usuario).where(usuario.c.nombre == form_data.username)
-    user_db = await database.fetch_one(query)
-    
-    # 2. Validar si existe y si la contraseña coincide
-    if not user_db or not verificar_password(form_data.password, user_db["contrasena_hash"]):
-        raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Usuario o contraseña incorrectos",
-            headers={"WWW-Authenticate": "Bearer"},
-        )
-    
-    # 3. Generar Token
-    # Guardamos en el token el ID y el ROL (útil para el frontend)
+    user = await database.fetch_one(query) # <--- La variable se llama 'user'
+
+    if not user or not verificar_password(form_data.password, user["contrasena_hash"]):
+        raise HTTPException(status_code=401, detail="Usuario o contraseña incorrectos")
+
+    # CORRECCIÓN AQUÍ: Cambia 'user_db' por 'user'
     access_token = crear_token_acceso(
-        data={"sub": user_db["nombre"], "id": user_db["id"], "rol": user_db["rol"]}
+        data={"sub": user["nombre"], "id": user["id"], "rol": user["rol"]}
     )
     
-    return {"access_token": access_token, "token_type": "bearer"}
+    return {
+        "access_token": access_token, 
+        "token_type": "bearer",
+        "usuario_id": user["id"],      # <--- 'user' en lugar de 'user_db'
+        "sucursal_id": user["sucursal_id"]
+    }
