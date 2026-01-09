@@ -1,8 +1,8 @@
 """init schema
 
-Revision ID: 9f9b155d755c
+Revision ID: 6bf6ad8ecc19
 Revises: 
-Create Date: 2026-01-08 19:55:34.724695
+Create Date: 2026-01-08 20:08:24.021402
 
 """
 from typing import Sequence, Union
@@ -12,7 +12,7 @@ import sqlalchemy as sa
 
 
 # revision identifiers, used by Alembic.
-revision: str = '9f9b155d755c'
+revision: str = '6bf6ad8ecc19'
 down_revision: Union[str, Sequence[str], None] = None
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
@@ -57,6 +57,12 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('nombre', sa.Text(), nullable=False),
     sa.Column('direccion', sa.Text(), nullable=True),
+    sa.PrimaryKeyConstraint('id'),
+    sa.UniqueConstraint('nombre')
+    )
+    op.create_table('tipo_producto',
+    sa.Column('id', sa.Integer(), nullable=False),
+    sa.Column('nombre', sa.Text(), nullable=False),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('nombre')
     )
@@ -230,6 +236,7 @@ def downgrade() -> None:
     op.drop_table('corte_caja')
     op.drop_table('usuario')
     op.drop_table('subcategoria')
+    op.drop_table('tipo_producto')
     op.drop_table('sucursal')
     op.drop_table('marca')
     op.drop_table('etapa')
