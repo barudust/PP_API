@@ -1,7 +1,7 @@
 from fastapi import APIRouter, HTTPException
 from typing import List, Optional
 from pydantic import BaseModel
-from datetime import datetime, timezone, date # <--- AQUÍ ESTABA EL ERROR (Faltaba date)
+from datetime import datetime, timezone, date
 
 from sqlalchemy import select, desc, or_, and_
 
@@ -17,6 +17,7 @@ router = APIRouter(
 class DetalleVentaReq(BaseModel):
     producto_id: int
     cantidad: float
+    es_granel: bool = False
 
 class VentaCreateReq(BaseModel):
     sucursal_id: int
@@ -54,53 +55,67 @@ async def registrar_venta(data: VentaCreateReq):
         )
         venta_id = await database.execute(query_venta)
         
-        # 3. Procesar Productos (Inventario y Descuentos)
+        # 3. Procesar Productos
         for item in data.detalles:
-            # A. Datos del Producto
+            # A. Obtener datos maestros del producto
             q_prod = select(producto).where(producto.c.id == item.producto_id)
             prod_db = await database.fetch_one(q_prod)
+            
             if not prod_db:
                 raise HTTPException(404, f"Producto {item.producto_id} no encontrado")
+
+            # --- LÓGICA DE PRECIO BASE Y DESCUENTO DE STOCK ---
+            precio_base = float(prod_db['precio_base'])
+            precio_granel = float(prod_db['precio_granel'] or 0.0)
+            contenido_neto = float(prod_db['contenido_neto'] or 1.0)
             
-            # B. Calcular Precio Base (Bulto vs Granel)
-            precio_lista = float(prod_db['precio_base'])
-            contenido_neto = float(prod_db['contenido_neto'])
-            
-            # Lógica simple: si es a granel y cantidad < 1 (fracción de bulto), usar precio granel si existe
-            if prod_db['se_vende_a_granel'] and prod_db['precio_granel'] and item.cantidad < 1.0:
-                precio_lista = float(prod_db['precio_granel'])
-            
-            # C. --- MOTOR DE DESCUENTOS AUTOMÁTICOS ---
+            precio_lista_a_usar = 0.0
+            kilos_a_restar_total = 0.0
+
+            if item.es_granel:
+                # VENTA A GRANEL (Kilos sueltos)
+                # 1. Usamos el precio por kilo
+                precio_lista_a_usar = precio_granel if precio_granel > 0 else precio_base
+                # 2. Restamos la cantidad exacta (ej. 0.5kg)
+                kilos_a_restar_total = float(item.cantidad)
+            else:
+                # VENTA POR PAQUETE (Bulto/Caja cerrada)
+                # 1. Usamos el precio del paquete
+                precio_lista_a_usar = precio_base
+                # 2. Restamos Cantidad * Contenido (ej. 1 bulto * 20kg = 20kg)
+                if prod_db['unidad_medida'] in ['kg', 'lt', 'Kg', 'Litro']:
+                    kilos_a_restar_total = float(item.cantidad)
+                else:
+                    kilos_a_restar_total = float(item.cantidad) * contenido_neto
+
+            # --- MOTOR DE DESCUENTOS AUTOMÁTICOS ---
             porcentaje_descuento = 0.0
-            
-            criterios_cliente = [regla_descuento.c.cliente_id == None]
-            if data.cliente_id:
-                criterios_cliente.append(regla_descuento.c.cliente_id == data.cliente_id)
-            
-            criterios_producto = [
-                regla_descuento.c.producto_id == item.producto_id,
-                regla_descuento.c.marca_id == prod_db['marca_id']
-            ]
-            
             query_reglas = select(regla_descuento).where(
                 and_(
                     regla_descuento.c.activo == True,
-                    or_(*criterios_cliente),
-                    or_(*criterios_producto)
+                    or_(regla_descuento.c.cliente_id == data.cliente_id, regla_descuento.c.cliente_id == None),
+                    or_(
+                        regla_descuento.c.producto_id == item.producto_id,
+                        regla_descuento.c.marca_id == prod_db['marca_id'],
+                        and_(regla_descuento.c.producto_id == None, regla_descuento.c.marca_id == None)
+                    )
                 )
-            ).order_by(desc(regla_descuento.c.descuento_porcentaje))
-            
+            ).order_by(
+                desc(regla_descuento.c.producto_id),
+                desc(regla_descuento.c.marca_id),
+                desc(regla_descuento.c.descuento_porcentaje)
+            )
+
             mejor_regla = await database.fetch_one(query_reglas)
-            
             if mejor_regla:
                 porcentaje_descuento = float(mejor_regla['descuento_porcentaje'])
             
-            # Aplicar Descuento
-            precio_final_unitario = precio_lista * (1 - (porcentaje_descuento / 100))
+            # Cálculo de precios finales
+            precio_final_unitario = precio_lista_a_usar * (1 - (porcentaje_descuento / 100))
             subtotal = float(item.cantidad) * precio_final_unitario
             total_venta_bruto += subtotal
 
-            # D. Registrar Detalle
+            # D. Registrar Detalle en la base de datos
             q_detalle = venta_detalle.insert().values(
                 venta_id=venta_id,
                 producto_id=item.producto_id,
@@ -109,12 +124,7 @@ async def registrar_venta(data: VentaCreateReq):
             )
             await database.execute(q_detalle)
             
-            # E. Descontar Inventario
-            if prod_db['unidad_medida'] in ['kg', 'lt']:
-                kilos_a_restar = float(item.cantidad)
-            else:
-                kilos_a_restar = float(item.cantidad) * contenido_neto
-
+            # E. Actualizar Inventario (Usando el cálculo corregido)
             q_inv = select(inventario).where(
                 (inventario.c.producto_id == item.producto_id) &
                 (inventario.c.sucursal_id == data.sucursal_id)
@@ -122,7 +132,7 @@ async def registrar_venta(data: VentaCreateReq):
             inv_db = await database.fetch_one(q_inv)
             
             stock_actual = float(inv_db['cantidad']) if inv_db else 0.0
-            nuevo_stock = stock_actual - kilos_a_restar
+            nuevo_stock = stock_actual - kilos_a_restar_total
             
             if inv_db:
                 await database.execute(
@@ -138,14 +148,14 @@ async def registrar_venta(data: VentaCreateReq):
                     )
                 )
 
-        # 4. Cerrar Totales
+        # 4. Cerrar Totales Finales
         total_neto = total_venta_bruto - data.descuento_especial
         await database.execute(
             venta.update().where(venta.c.id == venta_id).values(total=total_neto)
         )
         
         return {
-            "mensaje": "Venta registrada",
+            "mensaje": "Venta registrada exitosamente",
             "venta_id": venta_id,
             "total_original": total_venta_bruto,
             "total_final": total_neto,
@@ -157,7 +167,6 @@ async def listar_ventas(
     sucursal_id: Optional[int] = None,
     fecha: Optional[date] = None
 ):
-    """Listar ventas resumidas"""
     query = select(venta)
     if sucursal_id:
         query = query.where(venta.c.sucursal_id == sucursal_id)
@@ -176,14 +185,11 @@ async def listar_ventas(
 
 @router.get("/{id}", response_model=dict)
 async def obtener_venta(id: int):
-    """Obtener el ticket completo"""
-    # 1. Cabecera
     q_venta = select(venta).where(venta.c.id == id)
     v = await database.fetch_one(q_venta)
     if not v:
         raise HTTPException(404, "Venta no encontrada")
     
-    # 2. Detalles
     q_detalles = select(
         venta_detalle.c.cantidad,
         venta_detalle.c.precio_unitario,
@@ -202,14 +208,12 @@ async def obtener_venta(id: int):
 
 @router.put("/{id}/cancelar")
 async def cancelar_venta(id: int):
-    """Cancela una venta y regresa el stock"""
     async with database.transaction():
         q_venta = select(venta).where(venta.c.id == id)
         v = await database.fetch_one(q_venta)
         if not v:
             raise HTTPException(404, "Venta no encontrada")
         
-        # 2. Regresar stock
         q_detalles = select(venta_detalle).where(venta_detalle.c.venta_id == id)
         items = await database.fetch_all(q_detalles)
         
@@ -217,11 +221,15 @@ async def cancelar_venta(id: int):
             q_prod = select(producto).where(producto.c.id == item['producto_id'])
             prod = await database.fetch_one(q_prod)
             
-            kilos_a_regresar = 0.0
-            if prod['unidad_medida'] in ['kg', 'lt']:
-                kilos_a_regresar = float(item['cantidad'])
-            else:
-                kilos_a_regresar = float(item['cantidad']) * float(prod['contenido_neto'])
+            # Al cancelar, regresamos exactamente lo que se restó
+            # (Aquí asumimos que la venta original se hizo con la lógica de bulto/kg)
+            # Como no guardamos en venta_detalle si fue granel o no, 
+            # inferimos por la unidad medida como fallback seguro.
+            kilos_a_regresar = float(item['cantidad'])
+            if prod['unidad_medida'] not in ['kg', 'lt', 'Kg', 'Litro']:
+                # Si la cantidad es entera, es probable que fuera un bulto
+                if float(item['cantidad']) % 1 == 0:
+                     kilos_a_regresar = float(item['cantidad']) * float(prod['contenido_neto'])
             
             q_inv = select(inventario).where(
                 (inventario.c.producto_id == item['producto_id']) &
@@ -238,7 +246,6 @@ async def cancelar_venta(id: int):
                     )
                 )
 
-        # 3. Eliminar venta (Reverso simple)
         await database.execute(venta_detalle.delete().where(venta_detalle.c.venta_id == id))
         await database.execute(venta.delete().where(venta.c.id == id))
         

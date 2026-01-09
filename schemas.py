@@ -185,6 +185,8 @@ class ProductoUpdate(BaseModel):
     contenido_neto: Optional[float] = None 
     unidad_medida: Optional[str] = None
     stock: Optional[float] = None
+    precio_granel: Optional[float] = None
+    activo: Optional[bool] = None
 
 class TipoProductoIn(BaseModel):
     nombre: str

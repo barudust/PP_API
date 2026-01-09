@@ -1,79 +1,124 @@
 from fastapi import APIRouter
-from typing import List
-from datetime import date, datetime, timezone
+from typing import List, Optional
+from datetime import date, datetime, time, timezone
 from sqlalchemy import select, func, and_, desc
-from database import database
-# 👇 AQUÍ FALTABA 'inventario'
-from models import venta, venta_detalle, producto, inventario
+from database import database, fecha_local_iso
+from models import venta, venta_detalle, producto, inventario, ingreso_inventario, usuario, cliente, corte_caja, ajuste_inventario
 
 router = APIRouter(
     prefix="/informes",
     tags=["Informes y Reportes"]
 )
 
-@router.get("/ventas-dia")
-async def reporte_ventas_dia(sucursal_id: int, fecha: date = None):
-    if not fecha:
-        fecha = datetime.now(timezone.utc).date()
-    
-    inicio = datetime.combine(fecha, datetime.min.time())
-    fin = datetime.combine(fecha, datetime.max.time())
-    
-    query = select(func.sum(venta.c.total)).where(
-        and_(
-            venta.c.sucursal_id == sucursal_id,
-            venta.c.fecha >= inicio,
-            venta.c.fecha <= fin
-        )
-    )
-    total = await database.fetch_val(query) or 0.0
-    
-    query_list = select(venta).where(
-        and_(
-            venta.c.sucursal_id == sucursal_id,
-            venta.c.fecha >= inicio,
-            venta.c.fecha <= fin
-        )
-    )
-    lista = await database.fetch_all(query_list)
-    
-    return {
-        "fecha": fecha,
-        "sucursal_id": sucursal_id,
-        "total_vendido": total,
-        "cantidad_transacciones": len(lista),
-        "ventas": lista
-    }
+# Función auxiliar para convertir fechas
+def get_rango_fechas(f_inicio: date, f_fin: date):
+    inicio = datetime.combine(f_inicio, time.min)
+    fin = datetime.combine(f_fin, time.max)
+    return inicio, fin
 
-@router.get("/productos-mas-vendidos")
-async def productos_top(limit: int = 5):
-    query = select(
-        producto.c.nombre,
-        func.sum(venta_detalle.c.cantidad).label("total_cantidad"),
-        func.sum(venta_detalle.c.cantidad * venta_detalle.c.precio_unitario).label("total_dinero")
-    ).select_from(
-        venta_detalle.join(producto)
-    ).group_by(
-        producto.c.id
-    ).order_by(desc("total_cantidad")).limit(limit)
+@router.get("/reporte-ventas")
+async def reporte_ventas(sucursal_id: int, inicio: date, fin: date):
+    dt_inicio, dt_fin = get_rango_fechas(inicio, fin)
     
-    return await database.fetch_all(query)
-
-@router.get("/stock-bajo")
-async def alerta_stock_bajo(sucursal_id: int):
     query = select(
-        producto.c.nombre,
-        producto.c.sku,
-        inventario.c.cantidad,
-        producto.c.stock_minimo 
+        venta.c.id,
+        venta.c.fecha,
+        venta.c.total,
+        venta.c.descuento_especial_monto,
+        cliente.c.nombre.label("nombre_cliente"),
+        usuario.c.nombre.label("nombre_vendedor")
     ).select_from(
-        inventario.join(producto)
+        venta.outerjoin(cliente).join(usuario)
     ).where(
         and_(
-            inventario.c.sucursal_id == sucursal_id,
-            producto.c.activo == True,
-            inventario.c.cantidad <= producto.c.stock_minimo 
+            venta.c.sucursal_id == sucursal_id,
+            venta.c.fecha >= dt_inicio,
+            venta.c.fecha <= dt_fin
         )
-    ).order_by(inventario.c.cantidad)
+    ).order_by(desc(venta.c.fecha))
     
-    return await database.fetch_all(query)
+    resultados = await database.fetch_all(query)
+    return [{**dict(r), "fecha": fecha_local_iso(r["fecha"])} for r in resultados]
+
+@router.get("/reporte-surtidos")
+async def reporte_surtidos(sucursal_id: int, inicio: date, fin: date):
+    dt_inicio, dt_fin = get_rango_fechas(inicio, fin)
+    
+    # 1. Traemos los datos crudos ordenados por fecha
+    query = select(
+        ingreso_inventario.c.id,
+        ingreso_inventario.c.fecha_actualizacion.label("fecha"),
+        ingreso_inventario.c.cantidad,
+        producto.c.nombre.label("nombre_producto"),
+        producto.c.unidad_medida,
+        usuario.c.nombre.label("usuario_nombre") # Aquí ya no chocará
+    ).select_from(
+        ingreso_inventario.join(producto).join(usuario)
+    ).where(
+        and_(
+            ingreso_inventario.c.sucursal_id == sucursal_id,
+            ingreso_inventario.c.fecha_actualizacion >= dt_inicio,
+            ingreso_inventario.c.fecha_actualizacion <= dt_fin
+        )
+    ).order_by(desc("fecha"))
+    
+    resultados = await database.fetch_all(query)
+    
+    # 2. AGRUPACIÓN LÓGICA
+    bloques = {}
+    
+    for r in resultados:
+        # Usamosstrftime para quitar los segundos y agrupar por minuto
+        fecha_str = r["fecha"].strftime("%Y-%m-%d %H:%M") 
+        
+        # CORRECCIÓN: Cambié el nombre de la variable de 'usuario' a 'nombre_usuario'
+        nombre_usuario = r["usuario_nombre"] 
+        
+        clave = f"{fecha_str}|{nombre_usuario}"
+        
+        if clave not in bloques:
+            bloques[clave] = {
+                "fecha": fecha_str,
+                "usuario": nombre_usuario,
+                "items": []
+            }
+        
+        bloques[clave]["items"].append({
+            "producto": r["nombre_producto"],
+            "cantidad": r["cantidad"],
+            "unidad": r["unidad_medida"]
+        })
+    
+    # 3. Convertimos a lista y devolvemos
+    return list(bloques.values())
+
+@router.get("/reporte-cortes")
+async def reporte_cortes(sucursal_id: int, inicio: date, fin: date):
+    dt_inicio, dt_fin = get_rango_fechas(inicio, fin)
+    
+    query = select(
+        corte_caja.c.id,
+        corte_caja.c.fecha_apertura,
+        corte_caja.c.fecha_cierre,
+        corte_caja.c.ventas_totales,
+        corte_caja.c.diferencia,
+        usuario.c.nombre.label("usuario_nombre")
+    ).select_from(
+        corte_caja.join(usuario)
+    ).where(
+        and_(
+            corte_caja.c.sucursal_id == sucursal_id,
+            corte_caja.c.fecha_apertura >= dt_inicio,
+            corte_caja.c.fecha_apertura <= dt_fin
+        )
+    ).order_by(desc(corte_caja.c.fecha_apertura))
+    
+    resultados = await database.fetch_all(query)
+    return [
+        {
+            **dict(r), 
+            "fecha_apertura": fecha_local_iso(r["fecha_apertura"]),
+            "fecha_cierre": fecha_local_iso(r["fecha_cierre"]) if r["fecha_cierre"] else None
+        } 
+        for r in resultados
+    ]

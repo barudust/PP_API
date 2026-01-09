@@ -1,8 +1,10 @@
 # main.py
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from contextlib import asynccontextmanager
+from fastapi.exceptions import RequestValidationError
+from fastapi.responses import JSONResponse
 
 # --- ¡Nuevas importaciones! ---
 from database import database 
@@ -14,9 +16,25 @@ async def lifespan(app: FastAPI):
     yield
     await database.disconnect()
 
+
+
 # En main.py cambia la línea donde creas la app:
 
 app = FastAPI(lifespan=lifespan, redirect_slashes=False) # <--- Agrega esto
+@app.exception_handler(RequestValidationError)
+async def validation_exception_handler(request: Request, exc: RequestValidationError):
+    errors = exc.errors()
+    print("----- ERROR 422 DETECTADO -----")
+    for error in errors:
+        # Esto te dirá: qué campo falta, qué tipo se esperaba y qué mandaste
+        print(f"Campo: {error.get('loc')}")
+        print(f"Mensaje: {error.get('msg')}")
+        print(f"Tipo de error: {error.get('type')}")
+    print("-------------------------------")
+    return JSONResponse(
+        status_code=422,
+        content={"detail": errors},
+    )
 
 # ... (tu middleware se queda igual) ...
 app.add_middleware(
