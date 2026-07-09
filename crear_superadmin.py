@@ -22,11 +22,21 @@ except Exception:
     pass
 
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import create_async_engine
 
+from app.core.config import settings
 from app.core.database import database
-from app.models import sucursal, usuario
+from app.models import metadata, sucursal, usuario
 from app.core.security import get_password_hash
 from app.core.dependencies import ROL_SUPERADMIN
+
+engine = create_async_engine(settings.DATABASE_URL)
+
+
+async def _ensure_schema() -> None:
+    print("🔧 Verificando y creando el esquema de base de datos si hace falta...")
+    async with engine.begin() as conn:
+        await conn.run_sync(metadata.create_all)
 
 
 async def _ensure_sucursal(nombre: str) -> int:
@@ -45,6 +55,7 @@ async def _ensure_sucursal(nombre: str) -> int:
 async def main(nombre: str, password: str, sucursal_nombre: str) -> None:
     await database.connect()
     try:
+        await _ensure_schema()
         suc_id = await _ensure_sucursal(sucursal_nombre)
 
         ya = await database.fetch_one(
