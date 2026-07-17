@@ -1,5 +1,7 @@
 # Cómo ejecutar Punto Peludo
 
+> 👉 **¿Sesión nueva? Lee primero [`EMPEZAR_AQUI.md`](EMPEZAR_AQUI.md).**
+
 Guía para levantar todo el sistema. Son 3 piezas:
 
 | Pieza | Carpeta | Qué es |
@@ -8,7 +10,7 @@ Guía para levantar todo el sistema. Son 3 piezas:
 | **Web** | `../punto-peludo-web/` | Panel de administración + punto de venta (React). |
 | **Android** | `../PuntoPeludo/` | App móvil del cajero (opcional). |
 
-Todo vive bajo `Documents/Negocio/Punt o de venta/`.
+Todo vive bajo `Documents/Negocio/PDV/`.
 
 ---
 

@@ -94,9 +94,9 @@ def main():
     if not usr_id:
         usr_id = 1
 
-    # 2. CLIENTES (abierto)
-    crear("clientes", {"nombre": "Público General", "telefono": "000"})
-    crear("clientes", {"nombre": "Juan Ganadero", "telefono": "555-1111"})
+    # 2. CLIENTES (protegido: los clientes son propios de una sucursal)
+    crear("clientes", {"nombre": "Público General", "telefono": "000", "sucursal_id": suc_id}, headers)
+    crear("clientes", {"nombre": "Juan Ganadero", "telefono": "555-1111", "sucursal_id": suc_id}, headers)
 
     # 3. CATÁLOGOS (abierto)
     cat_alim = crear("categorias", {"nombre": "Alimentos"})

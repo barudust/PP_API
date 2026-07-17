@@ -21,6 +21,8 @@ class MarcaIn(BaseModel):
     # Variación de fábrica esperada por empaque (unidad base), según la empresa.
     tolerancia_bajo: float = 0.0   # cuánto puede FALTAR por bulto
     tolerancia_alto: float = 0.0   # cuánto puede SOBRAR por bulto
+    # Margen de venta por defecto (%) al importar facturas de esta marca.
+    margen_default: float = 0.0
 class Marca(MarcaIn):
     id: int
 
@@ -52,6 +54,7 @@ class SucursalOut(SucursalIn):
 
 class ClienteIn(BaseModel):
     nombre: str
+    sucursal_id: int  # el cliente pertenece a una sucursal, no es global
     telefono: Optional[str] = None
     direccion: Optional[str] = None
     notas: Optional[str] = None

@@ -1,5 +1,5 @@
 """Schemas de inventario, ingresos, ajustes de auditoría e historial."""
-from typing import Optional
+from typing import List, Optional
 from datetime import datetime
 from pydantic import BaseModel
 
@@ -41,6 +41,42 @@ class IngresoInventarioIn(BaseModel):
 class IngresoInventario(IngresoInventarioIn):
     id: int
     fecha_actualizacion: str
+
+
+class IngresoInventarioLoteLinea(BaseModel):
+    producto_id: int
+    cantidad: float
+
+
+class IngresoInventarioLoteIn(BaseModel):
+    sucursal_id: int
+    usuario_id: int
+    proveedor: Optional[str] = None
+    nota: Optional[str] = None
+    lineas: List[IngresoInventarioLoteLinea]
+
+
+class IngresoInventarioLoteResumen(BaseModel):
+    id: int
+    fecha: str
+    sucursal_id: int
+    usuario_id: int
+    usuario_nombre: Optional[str] = None
+    proveedor: Optional[str] = None
+    nota: Optional[str] = None
+    num_lineas: int
+    total_unidades: float
+
+
+class IngresoInventarioLoteLineaDetalle(BaseModel):
+    producto_id: int
+    producto_nombre: str
+    unidad_medida: str
+    cantidad: float
+
+
+class IngresoInventarioLoteDetalle(IngresoInventarioLoteResumen):
+    lineas: List[IngresoInventarioLoteLineaDetalle]
 
 
 class AjusteInventarioIn(BaseModel):

@@ -15,10 +15,11 @@ from .catalogo import (
     ClienteIn, Cliente,
     UsuarioIn, Usuario, UsuarioUpdate, CambioPassword,
 )
-from .producto import ProductoIn, Producto, ProductoUpdate
+from .producto import ProductoIn, Producto, ProductoUpdate, HistorialPrecioProducto
 from .inventario import (
     InventarioIn, Inventario,
     IngresoInventarioIn, IngresoInventario,
+    IngresoInventarioLoteIn, IngresoInventarioLoteResumen, IngresoInventarioLoteDetalle,
     AjusteInventarioIn, AjusteInventario,
     HistorialInventario,
 )
@@ -27,6 +28,16 @@ from .ventas import (
     VentaDetalleIn, VentaDetalle,
     ReglaDescuentoIn, ReglaDescuento,
 )
+from .importacion import (
+    LineaImportacion, LineaImportacionUpdate,
+    LoteImportacion, LoteImportacionDetalle,
+    ConfirmarLoteIn, ConfirmarLoteResumen,
+)
+from .configuracion import ConfiguracionNegocio, ConfiguracionNegocioIn
+from .lista_plantilla import (
+    ListaPlantillaFila, ListaPlantillaFilaIn, ListaPlantillaFilaUpdate,
+    ReordenarIn, ListaPlantillaFilaResuelta, ListaPlantillaMarca, ImportarPlantillaResumen,
+)
 
 __all__ = [
     "CategoriaIn", "Categoria", "SubcategoriaIn", "Subcategoria",
@@ -34,9 +45,16 @@ __all__ = [
     "TipoProductoIn", "TipoProducto",
     "SucursalIn", "SucursalOut", "ClienteIn", "Cliente",
     "UsuarioIn", "Usuario", "UsuarioUpdate", "CambioPassword",
-    "ProductoIn", "Producto", "ProductoUpdate",
+    "ProductoIn", "Producto", "ProductoUpdate", "HistorialPrecioProducto",
     "InventarioIn", "Inventario", "IngresoInventarioIn", "IngresoInventario",
+    "IngresoInventarioLoteIn", "IngresoInventarioLoteResumen", "IngresoInventarioLoteDetalle",
     "AjusteInventarioIn", "AjusteInventario", "HistorialInventario",
     "VentaIn", "Venta", "VentaDetalleIn", "VentaDetalle",
     "ReglaDescuentoIn", "ReglaDescuento",
+    "LineaImportacion", "LineaImportacionUpdate",
+    "LoteImportacion", "LoteImportacionDetalle",
+    "ConfirmarLoteIn", "ConfirmarLoteResumen",
+    "ConfiguracionNegocio", "ConfiguracionNegocioIn",
+    "ListaPlantillaFila", "ListaPlantillaFilaIn", "ListaPlantillaFilaUpdate",
+    "ReordenarIn", "ListaPlantillaFilaResuelta", "ListaPlantillaMarca", "ImportarPlantillaResumen",
 ]

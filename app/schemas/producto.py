@@ -1,4 +1,5 @@
 """Schemas de Producto (modelo híbrido relacional + JSONB)."""
+from datetime import datetime
 from typing import Optional, Dict, Any
 from pydantic import BaseModel, Field
 
@@ -37,6 +38,11 @@ class ProductoIn(BaseModel):
     precio_base: float
     precio_granel: Optional[float] = None
 
+    # Costo de compra (visible solo con permiso `productos.ver_costo`) y
+    # excepción de margen por producto (gana sobre marca.margen_default).
+    costo: Optional[float] = None
+    margen_override: Optional[float] = None
+
     activo: bool = True
     stock_minimo: float = 5.0
 
@@ -59,6 +65,8 @@ class ProductoUpdate(BaseModel):
     ubicacion_fisica: Optional[str] = None
     precio_base: Optional[float] = None
     precio_granel: Optional[float] = None
+    costo: Optional[float] = None
+    margen_override: Optional[float] = None
     stock_minimo: Optional[float] = None
     contenido_neto: Optional[float] = None
     tolerancia_unidad: Optional[float] = None
@@ -67,3 +75,17 @@ class ProductoUpdate(BaseModel):
     activo: Optional[bool] = None
     stock: Optional[float] = None  # atajo para setear inventario (compat)
     sucursal_id: Optional[int] = None  # sucursal del atajo de stock (opcional)
+
+
+class HistorialPrecioProducto(BaseModel):
+    id: int
+    producto_id: int
+    usuario_id: int
+    usuario_nombre: Optional[str] = None
+    fecha: datetime
+    costo_anterior: Optional[float] = None
+    costo_nuevo: Optional[float] = None
+    precio_anterior: Optional[float] = None
+    precio_nuevo: Optional[float] = None
+    origen: str
+    lote_id: Optional[int] = None

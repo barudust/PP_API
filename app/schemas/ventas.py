@@ -12,6 +12,7 @@ class VentaIn(BaseModel):
     total: float
     descuento_especial_monto: float = 0.0
     descuento_especial_motivo: Optional[str] = None
+    tipo_entrega: str = "tienda"  # 'tienda' | 'domicilio'
 
 
 class Venta(VentaIn):
@@ -36,6 +37,9 @@ class ReglaDescuentoIn(BaseModel):
     cliente_id: Optional[int] = None
     marca_id: Optional[int] = None
     producto_id: Optional[int] = None
+    # Sucursal a la que aplica (None = todas). Si cliente_id viene, el backend
+    # la sobrescribe con la sucursal del cliente (un cliente es de una sola sucursal).
+    sucursal_id: Optional[int] = None
     activo: bool = True
 
 

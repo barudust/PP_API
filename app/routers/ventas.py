@@ -1,4 +1,4 @@
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Response
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import datetime, timezone, date
@@ -7,9 +7,10 @@ from sqlalchemy import select, desc, or_, and_
 
 from app.core.database import database, fecha_local_iso
 from app.core.config import settings
-from app.core.constants import MOV_VENTA, MOV_CANCELACION
-from app.models import venta, venta_detalle, inventario, producto, corte_caja, regla_descuento
+from app.core.constants import MOV_VENTA, MOV_CANCELACION, ENTREGA_TIENDA, TIPOS_ENTREGA
+from app.models import venta, venta_detalle, inventario, producto, corte_caja, regla_descuento, usuario, sucursal, cliente
 from app.services.inventario_service import registrar_movimiento
+from app.services.export_service import generar_excel
 
 router = APIRouter(
     prefix="/ventas",
@@ -29,11 +30,28 @@ class VentaCreateReq(BaseModel):
     detalles: List[DetalleVentaReq]
     descuento_especial: float = 0.0
     motivo_descuento: Optional[str] = None
+    tipo_entrega: str = ENTREGA_TIENDA  # 'tienda' | 'domicilio'
+
+
+def _especificidad_regla(r) -> int:
+    """Puntaje de especificidad: producto > marca > cliente. A mayor puntaje,
+    más específica (y por lo tanto gana sobre reglas más generales)."""
+    score = 0
+    if r["producto_id"] is not None:
+        score += 100
+    if r["marca_id"] is not None:
+        score += 10
+    if r["cliente_id"] is not None:
+        score += 1
+    return score
 
 @router.post("/", response_model=dict)
 async def registrar_venta(data: VentaCreateReq):
+    if data.tipo_entrega not in TIPOS_ENTREGA:
+        raise HTTPException(400, f"tipo_entrega inválido. Válidos: {sorted(TIPOS_ENTREGA)}")
+
     async with database.transaction():
-        
+
         # 1. Validar Corte de Caja Abierto
         query_corte = select(corte_caja).where(
             (corte_caja.c.usuario_id == data.usuario_id) &
@@ -54,7 +72,8 @@ async def registrar_venta(data: VentaCreateReq):
             fecha=datetime.now(timezone.utc),
             total=0, # Se actualiza al final
             descuento_especial_monto=data.descuento_especial,
-            descuento_especial_motivo=data.motivo_descuento
+            descuento_especial_motivo=data.motivo_descuento,
+            tipo_entrega=data.tipo_entrega,
         )
         venta_id = await database.execute(query_venta)
         
@@ -92,26 +111,32 @@ async def registrar_venta(data: VentaCreateReq):
                     kilos_a_restar_total = float(item.cantidad) * contenido_neto
 
             # --- MOTOR DE DESCUENTOS AUTOMÁTICOS ---
+            # Las entregas a domicilio NUNCA reciben descuentos automáticos
+            # (acordado con el negocio: el descuento es un beneficio de compra
+            # en tienda).
             porcentaje_descuento = 0.0
-            query_reglas = select(regla_descuento).where(
-                and_(
-                    regla_descuento.c.activo == True,
-                    or_(regla_descuento.c.cliente_id == data.cliente_id, regla_descuento.c.cliente_id == None),
-                    or_(
-                        regla_descuento.c.producto_id == item.producto_id,
-                        regla_descuento.c.marca_id == prod_db['marca_id'],
-                        and_(regla_descuento.c.producto_id == None, regla_descuento.c.marca_id == None)
+            if data.tipo_entrega == ENTREGA_TIENDA:
+                query_reglas = select(regla_descuento).where(
+                    and_(
+                        regla_descuento.c.activo == True,
+                        or_(regla_descuento.c.sucursal_id == data.sucursal_id, regla_descuento.c.sucursal_id == None),
+                        or_(regla_descuento.c.cliente_id == data.cliente_id, regla_descuento.c.cliente_id == None),
+                        or_(
+                            regla_descuento.c.producto_id == item.producto_id,
+                            regla_descuento.c.marca_id == prod_db['marca_id'],
+                            and_(regla_descuento.c.producto_id == None, regla_descuento.c.marca_id == None)
+                        )
                     )
                 )
-            ).order_by(
-                desc(regla_descuento.c.producto_id),
-                desc(regla_descuento.c.marca_id),
-                desc(regla_descuento.c.descuento_porcentaje)
-            )
-
-            mejor_regla = await database.fetch_one(query_reglas)
-            if mejor_regla:
-                porcentaje_descuento = float(mejor_regla['descuento_porcentaje'])
+                candidatas = await database.fetch_all(query_reglas)
+                if candidatas:
+                    # Gana la regla más específica (producto > marca > cliente);
+                    # empate se rompe por mayor porcentaje. Ver _especificidad_regla.
+                    mejor_regla = max(
+                        candidatas,
+                        key=lambda r: (_especificidad_regla(r), float(r["descuento_porcentaje"])),
+                    )
+                    porcentaje_descuento = float(mejor_regla['descuento_porcentaje'])
             
             # Cálculo de precios finales
             precio_final_unitario = precio_lista_a_usar * (1 - (porcentaje_descuento / 100))
@@ -193,31 +218,95 @@ async def registrar_venta(data: VentaCreateReq):
 @router.get("/", response_model=List[dict])
 async def listar_ventas(
     sucursal_id: Optional[int] = None,
-    fecha: Optional[date] = None
+    fecha: Optional[date] = None,
+    cliente_id: Optional[int] = None,
+    usuario_id: Optional[int] = None,
 ):
-    query = select(venta)
+    # Se incluye el nombre del vendedor (join) para que el frontend pueda
+    # ofrecer un filtro por vendedor sin necesitar el permiso de superadmin
+    # que exige GET /usuarios/.
+    query = select(venta, usuario.c.nombre.label("usuario_nombre")).select_from(venta.join(usuario))
     if sucursal_id:
         query = query.where(venta.c.sucursal_id == sucursal_id)
     if fecha:
         inicio = datetime.combine(fecha, datetime.min.time())
         fin = datetime.combine(fecha, datetime.max.time())
         query = query.where((venta.c.fecha >= inicio) & (venta.c.fecha <= fin))
-    
+    if cliente_id:
+        query = query.where(venta.c.cliente_id == cliente_id)
+    if usuario_id:
+        query = query.where(venta.c.usuario_id == usuario_id)
+
     query = query.order_by(desc(venta.c.fecha))
     registros = await database.fetch_all(query)
     
     return [
-        {**dict(r), "fecha": fecha_local_iso(r["fecha"])} 
+        {**dict(r), "fecha": fecha_local_iso(r["fecha"])}
         for r in registros
     ]
 
+@router.get("/exportar/excel")
+async def exportar_ventas_excel(
+    sucursal_id: Optional[int] = None,
+    fecha: Optional[date] = None,
+    cliente_id: Optional[int] = None,
+    usuario_id: Optional[int] = None,
+):
+    query = (
+        select(
+            venta,
+            usuario.c.nombre.label("usuario_nombre"),
+            cliente.c.nombre.label("cliente_nombre"),
+        )
+        .select_from(venta.join(usuario).outerjoin(cliente))
+    )
+    if sucursal_id:
+        query = query.where(venta.c.sucursal_id == sucursal_id)
+    if fecha:
+        inicio = datetime.combine(fecha, datetime.min.time())
+        fin = datetime.combine(fecha, datetime.max.time())
+        query = query.where((venta.c.fecha >= inicio) & (venta.c.fecha <= fin))
+    if cliente_id:
+        query = query.where(venta.c.cliente_id == cliente_id)
+    if usuario_id:
+        query = query.where(venta.c.usuario_id == usuario_id)
+    query = query.order_by(desc(venta.c.fecha))
+    registros = await database.fetch_all(query)
+
+    encabezados = ["Folio", "Fecha", "Cliente", "Vendedor", "Tipo de entrega", "Descuento", "Total"]
+    filas = [
+        [
+            r["id"],
+            fecha_local_iso(r["fecha"]).replace("T", " ")[:16],
+            r["cliente_nombre"] or "Público general",
+            r["usuario_nombre"],
+            "A domicilio" if r["tipo_entrega"] == "domicilio" else "En tienda",
+            float(r["descuento_especial_monto"] or 0),
+            float(r["total"]),
+        ]
+        for r in registros
+    ]
+    contenido = generar_excel(encabezados, filas, "Ventas")
+    return Response(
+        content=contenido,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=ventas.xlsx"},
+    )
+
 @router.get("/{id}", response_model=dict)
 async def obtener_venta(id: int):
-    q_venta = select(venta).where(venta.c.id == id)
+    # Trae también el nombre de usuario/sucursal (para el ticket de
+    # reimpresión) — así el frontend no necesita permisos extra
+    # (`usuarios.gestionar`/`sucursales.gestionar`) solo para reimprimir.
+    q_venta = (
+        select(venta, usuario.c.nombre.label("usuario_nombre"), sucursal.c.nombre.label("sucursal_nombre"))
+        .select_from(venta.join(usuario).join(sucursal))
+        .where(venta.c.id == id)
+    )
     v = await database.fetch_one(q_venta)
     if not v:
         raise HTTPException(404, "Venta no encontrada")
-    
+
     q_detalles = select(
         venta_detalle.c.cantidad,
         venta_detalle.c.precio_unitario,
@@ -226,9 +315,9 @@ async def obtener_venta(id: int):
     ).select_from(
         venta_detalle.join(producto)
     ).where(venta_detalle.c.venta_id == id)
-    
+
     detalles = await database.fetch_all(q_detalles)
-    
+
     return {
         "venta": {**dict(v), "fecha": fecha_local_iso(v["fecha"])},
         "productos": [dict(d) for d in detalles]

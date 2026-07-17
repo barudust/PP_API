@@ -10,7 +10,7 @@ from fastapi.responses import JSONResponse
 from app.core.database import database
 from app.core.config import settings
 from app.services.permisos_service import sincronizar_catalogo
-from app.routers import productos, categorias, atributos, inventario, sucursales, usuarios, clientes, ventas, auth, corte, descuentos, auditoria, informes, dashboard, roles
+from app.routers import productos, categorias, atributos, inventario, sucursales, usuarios, clientes, ventas, auth, corte, descuentos, auditoria, informes, dashboard, roles, importacion, configuracion, listas
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -66,4 +66,7 @@ app.include_router(auditoria.router)
 app.include_router(informes.router)
 app.include_router(dashboard.router)
 app.include_router(roles.router)
+app.include_router(importacion.router)
+app.include_router(configuracion.router)
+app.include_router(listas.router)
 print("Routers incluidos. Iniciando app.")

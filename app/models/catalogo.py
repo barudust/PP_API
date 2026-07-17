@@ -28,6 +28,9 @@ marca = Table(
     # empresa. Ej: una marca cuyos bultos llegan con hasta -0.5kg -> bajo=0.5, alto=0.
     Column("tolerancia_bajo", Numeric(12, 3), nullable=False, server_default="0"),
     Column("tolerancia_alto", Numeric(12, 3), nullable=False, server_default="0"),
+    # Margen de venta por defecto (%) para calcular precio de venta a partir
+    # del costo de compra al importar facturas de esta marca.
+    Column("margen_default", Numeric(6, 3), nullable=False, server_default="0"),
 )
 
 especie = Table(

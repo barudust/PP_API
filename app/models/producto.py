@@ -1,5 +1,5 @@
 """Producto: el núcleo del catálogo (modelo híbrido relacional + JSONB)."""
-from sqlalchemy import Table, Column, Integer, Text, Numeric, Boolean, ForeignKey
+from sqlalchemy import Table, Column, Integer, Text, Numeric, Boolean, ForeignKey, DateTime, func
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.sql import text
 
@@ -44,6 +44,29 @@ producto = Table(
     Column("precio_base", Numeric(10, 2), nullable=False),
     Column("precio_granel", Numeric(10, 2), nullable=True),
 
+    # Costo de compra (solo visible con permiso `productos.ver_costo`) y
+    # excepción de margen por producto (gana sobre marca.margen_default).
+    Column("costo", Numeric(10, 2), nullable=True),
+    Column("margen_override", Numeric(6, 3), nullable=True),
+
     Column("activo", Boolean, default=True),  # Soft Delete
     Column("stock_minimo", Numeric(12, 3), default=5.0),
+)
+
+# Bitácora de cambios de costo/precio_base — se escribe una fila solo cuando
+# alguno de los dos realmente cambia, ya sea por edición manual (Productos) o
+# al confirmar una importación que vincula y actualiza un producto existente.
+producto_historial_precio = Table(
+    "producto_historial_precio",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("producto_id", Integer, ForeignKey("producto.id", ondelete="CASCADE"), nullable=False),
+    Column("usuario_id", Integer, ForeignKey("usuario.id"), nullable=False),
+    Column("fecha", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    Column("costo_anterior", Numeric(10, 2), nullable=True),
+    Column("costo_nuevo", Numeric(10, 2), nullable=True),
+    Column("precio_anterior", Numeric(10, 2), nullable=True),
+    Column("precio_nuevo", Numeric(10, 2), nullable=True),
+    Column("origen", Text, nullable=False),  # 'manual' | 'importacion'
+    Column("lote_id", Integer, ForeignKey("importacion_lote.id", ondelete="SET NULL"), nullable=True),
 )

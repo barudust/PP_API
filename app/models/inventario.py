@@ -15,6 +15,20 @@ inventario = Table(
     Column("fecha_actualizacion", DateTime(timezone=True), server_default=func.now(), nullable=False),
 )
 
+# Lote de ingreso: agrupa varias líneas de `ingreso_inventario` surtidas
+# juntas (ej. una entrega de proveedor con varios productos) para poder
+# auditarlas como una sola operación en vez de N filas sueltas sin relación.
+ingreso_inventario_lote = Table(
+    "ingreso_inventario_lote",
+    metadata,
+    Column("id", Integer, primary_key=True),
+    Column("fecha", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    Column("sucursal_id", Integer, ForeignKey("sucursal.id", ondelete="CASCADE"), nullable=False),
+    Column("usuario_id", Integer, ForeignKey("usuario.id", ondelete="CASCADE"), nullable=False),
+    Column("proveedor", Text, nullable=True),
+    Column("nota", Text, nullable=True),
+)
+
 # Registro de Compras / Ingresos
 ingreso_inventario = Table(
     "ingreso_inventario",
@@ -25,6 +39,9 @@ ingreso_inventario = Table(
     Column("cantidad", Numeric(12, 3), nullable=False),
     Column("usuario_id", Integer, ForeignKey("usuario.id", ondelete="CASCADE")),
     Column("fecha_actualizacion", DateTime(timezone=True), server_default=func.now(), nullable=False),
+    # NULL = ingreso suelto de un solo producto (endpoint viejo, usado por la
+    # app Android) — no todos los ingresos vienen de un lote por lista.
+    Column("lote_id", Integer, ForeignKey("ingreso_inventario_lote.id", ondelete="SET NULL"), nullable=True),
 )
 
 # Auditoría física (conteo/pesaje real vs. sistema)

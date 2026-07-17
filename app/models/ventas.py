@@ -36,6 +36,10 @@ regla_descuento = Table(
     Column("cliente_id", Integer, ForeignKey("cliente.id", ondelete="CASCADE")),
     Column("marca_id", Integer, ForeignKey("marca.id", ondelete="CASCADE")),
     Column("producto_id", Integer, ForeignKey("producto.id", ondelete="CASCADE")),
+    # NULL = aplica a todas las sucursales. Si la regla tiene cliente_id, el
+    # backend fuerza sucursal_id = cliente.sucursal_id (el cliente ya es de una
+    # sola sucursal). Para reglas por marca/producto sin cliente, es opcional.
+    Column("sucursal_id", Integer, ForeignKey("sucursal.id", ondelete="CASCADE"), nullable=True),
 
     Column("activo", Boolean, default=True),
 )
@@ -54,6 +58,10 @@ venta = Table(
 
     Column("descuento_especial_monto", Numeric(10, 2), default=0),
     Column("descuento_especial_motivo", Text),
+
+    # 'tienda' | 'domicilio'. Las entregas a domicilio no reciben descuentos
+    # automáticos (reglas por cliente/marca/producto).
+    Column("tipo_entrega", Text, nullable=False, server_default="tienda"),
 )
 
 venta_detalle = Table(

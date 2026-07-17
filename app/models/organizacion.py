@@ -29,4 +29,7 @@ cliente = Table(
     Column("telefono", Text),
     Column("direccion", Text),
     Column("notas", Text),  # "Amigo del dueño", "Cliente Frecuente", etc.
+    # Los clientes son propios de una sucursal (no compradores globales): si el
+    # mismo comprador va a otra sucursal, se registra ahí como cliente nuevo.
+    Column("sucursal_id", Integer, ForeignKey("sucursal.id", ondelete="CASCADE"), nullable=False),
 )

@@ -1,16 +1,17 @@
 import json
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from typing import List, Optional
 from datetime import datetime, timezone
 from sqlalchemy import select, func, and_
 
-from app.core.database import database
+from app.core.database import database, fecha_local_iso
 from app.models import inventario, ajuste_inventario, producto, historial_inventario, marca
 from app.schemas import AjusteInventarioIn, AjusteInventario, HistorialInventario
 from app.core.dependencies import require_roles, ROL_GERENTE
 from app.core.constants import TIPOS_AJUSTE, MOV_AJUSTE
 from app.services.auditoria_service import analizar_tolerancia
 from app.services.inventario_service import registrar_movimiento
+from app.services.export_service import generar_excel
 
 # La auditoría física la hace el Gerente (o SuperAdmin).
 router = APIRouter(
@@ -214,6 +215,46 @@ async def listar_ajustes(
         query = query.where(ajuste_inventario.c.producto_id == producto_id)
     query = query.order_by(ajuste_inventario.c.fecha.desc())
     return [dict(r) for r in await database.fetch_all(query)]
+
+
+@router.get("/ajustes/exportar/excel")
+async def exportar_ajustes_excel(
+    sucursal_id: Optional[int] = None,
+    tipo_ajuste: Optional[str] = None,
+    producto_id: Optional[int] = None,
+):
+    query = (
+        select(ajuste_inventario, producto.c.nombre.label("producto_nombre"))
+        .select_from(ajuste_inventario.join(producto))
+    )
+    if sucursal_id:
+        query = query.where(ajuste_inventario.c.sucursal_id == sucursal_id)
+    if tipo_ajuste:
+        query = query.where(ajuste_inventario.c.tipo_ajuste == tipo_ajuste)
+    if producto_id:
+        query = query.where(ajuste_inventario.c.producto_id == producto_id)
+    query = query.order_by(ajuste_inventario.c.fecha.desc())
+    registros = await database.fetch_all(query)
+
+    encabezados = ["Fecha", "Producto", "Cant. sistema", "Cant. física", "Diferencia", "Tipo de ajuste", "Motivo"]
+    filas = [
+        [
+            fecha_local_iso(r["fecha"]).replace("T", " ")[:16],
+            r["producto_nombre"],
+            float(r["cantidad_sistema"]),
+            float(r["cantidad_fisica"]),
+            float(r["diferencia"]),
+            r["tipo_ajuste"] or "",
+            r["motivo"] or "",
+        ]
+        for r in registros
+    ]
+    contenido = generar_excel(encabezados, filas, "Auditoría")
+    return Response(
+        content=contenido,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=auditoria.xlsx"},
+    )
 
 
 @router.get("/historial", response_model=List[HistorialInventario])

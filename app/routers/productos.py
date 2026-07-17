@@ -1,12 +1,15 @@
 import json
-from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi import APIRouter, HTTPException, Depends, Query, Response
 from typing import List, Optional
-from app.schemas import ProductoIn, Producto, ProductoUpdate
-from sqlalchemy import select, func, text
+from app.schemas import ProductoIn, Producto, ProductoUpdate, HistorialPrecioProducto
+from sqlalchemy import select, func, text, desc
 from app.core.database import database
 from app.core.config import settings
-from app.models import producto, inventario
-from app.core.dependencies import require_roles, ROL_GERENTE
+from app.models import producto, inventario, especie, categoria, subcategoria, marca, producto_historial_precio, usuario
+from app.core.dependencies import require_roles, ROL_GERENTE, ROL_SUPERADMIN, get_current_user_optional, get_current_user, require_perm
+from app.services.permisos_service import permisos_de_rol
+from app.services.historial_precio_service import registrar_cambio_precio
+from app.services.export_service import generar_excel
 
 
 router = APIRouter(
@@ -19,11 +22,24 @@ router = APIRouter(
 _gestion_catalogo = Depends(require_roles(ROL_GERENTE))
 
 
+async def _puede_ver_costo(usuario_actual) -> bool:
+    """El costo de compra es sensible: solo lo ven roles con el permiso
+    `productos.ver_costo` (no el vendedor). La lectura de productos es
+    pública (Android sin login), por eso esto es opcional, no obligatorio."""
+    if not usuario_actual:
+        return False
+    rol = (usuario_actual["rol"] or "").lower()
+    if rol == ROL_SUPERADMIN:
+        return True
+    return "productos.ver_costo" in await permisos_de_rol(rol)
+
+
 @router.get("/", response_model=List[Producto])
 async def obtener_productos(
     tipo: Optional[str] = None,
     marca_id: Optional[int] = None,
     categoria_id: Optional[int] = None,
+    subcategoria_id: Optional[int] = None,
     especie_id: Optional[int] = None,
     etapa_id: Optional[int] = None,
     q: Optional[str] = None,
@@ -31,6 +47,7 @@ async def obtener_productos(
         None, description='Filtro JSONB, ej. {"linea":"Premium","sabor":"Salmón"}'
     ),
     mostrar_inactivos: bool = False,
+    usuario_actual=Depends(get_current_user_optional),
 ):
     """
     Lista productos con su stock consolidado. Soporta filtros dinámicos por
@@ -51,6 +68,8 @@ async def obtener_productos(
         query = query.where(producto.c.marca_id == marca_id)
     if categoria_id:
         query = query.where(producto.c.categoria_id == categoria_id)
+    if subcategoria_id:
+        query = query.where(producto.c.subcategoria_id == subcategoria_id)
     if especie_id:
         query = query.where(producto.c.especie_id == especie_id)
     if etapa_id:
@@ -65,7 +84,11 @@ async def obtener_productos(
         for clave, valor in filtros.items():
             query = query.where(producto.c.atributos_extra[clave].astext == str(valor))
 
-    return await database.fetch_all(query)
+    filas = [dict(f) for f in await database.fetch_all(query)]
+    if not await _puede_ver_costo(usuario_actual):
+        for f in filas:
+            f["costo"] = None
+    return filas
 
 
 @router.get("/atributos-disponibles")
@@ -92,15 +115,71 @@ async def atributos_disponibles(tipo: Optional[str] = None):
     return {f["clave"]: list(f["valores"]) for f in filas}
 
 
+@router.get("/filtros")
+async def filtros_jerarquicos(
+    marca_id: Optional[int] = None, categoria_id: Optional[int] = None, tipo: Optional[str] = None
+):
+    """
+    Filtros de segundo nivel (categoría padre → opciones hija): dado un marca_id
+    (y opcionalmente un tipo), devuelve solo las especies/categorías que
+    realmente tienen productos activos de esa marca — para no mostrar filtros
+    irrelevantes (ej. si la marca solo vende para cerdo/ave, no listar gato/perro).
+    Si además se manda `categoria_id`, también devuelve las subcategorías de
+    esa categoría que tienen productos (para el filtro en cascada
+    Marca → Categoría → Subcategoría → Especie).
+    """
+    base_where = [producto.c.activo == True]
+    if marca_id:
+        base_where.append(producto.c.marca_id == marca_id)
+    if tipo:
+        base_where.append(producto.c.tipo_producto == tipo)
+
+    q_especies = (
+        select(especie.c.id, especie.c.nombre)
+        .select_from(producto.join(especie, producto.c.especie_id == especie.c.id))
+        .where(*base_where)
+        .distinct()
+        .order_by(especie.c.nombre)
+    )
+    q_categorias = (
+        select(categoria.c.id, categoria.c.nombre)
+        .select_from(producto.join(categoria, producto.c.categoria_id == categoria.c.id))
+        .where(*base_where)
+        .distinct()
+        .order_by(categoria.c.nombre)
+    )
+
+    especies = await database.fetch_all(q_especies)
+    categorias = await database.fetch_all(q_categorias)
+
+    subcategorias = []
+    if categoria_id:
+        q_subcategorias = (
+            select(subcategoria.c.id, subcategoria.c.nombre)
+            .select_from(producto.join(subcategoria, producto.c.subcategoria_id == subcategoria.c.id))
+            .where(*base_where, subcategoria.c.categoria_id == categoria_id)
+            .distinct()
+            .order_by(subcategoria.c.nombre)
+        )
+        subcategorias = await database.fetch_all(q_subcategorias)
+
+    return {
+        "especies": [dict(e) for e in especies],
+        "categorias": [dict(c) for c in categorias],
+        "subcategorias": [dict(s) for s in subcategorias],
+    }
 
 
 @router.get("/{id}", response_model=Producto)
-async def obtener_producto(id: int):
+async def obtener_producto(id: int, usuario_actual=Depends(get_current_user_optional)):
     query = producto.select().where(producto.c.id == id)
     result = await database.fetch_one(query)
     if result is None:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-    return result
+    datos = dict(result)
+    if not await _puede_ver_costo(usuario_actual):
+        datos["costo"] = None
+    return datos
 
 @router.post("/", response_model=Producto, dependencies=[_gestion_catalogo])
 async def crear_producto(prod: ProductoIn):
@@ -139,7 +218,7 @@ async def crear_producto(prod: ProductoIn):
 @router.put("/{id}/", response_model=Producto, dependencies=[_gestion_catalogo])
 @router.patch("/{id}", response_model=Producto, dependencies=[_gestion_catalogo])
 @router.put("/{id}", response_model=Producto, dependencies=[_gestion_catalogo])
-async def actualizar_parcial_producto(id: int, prod: ProductoUpdate):
+async def actualizar_parcial_producto(id: int, prod: ProductoUpdate, usuario=Depends(get_current_user)):
 
     # 1. Separar datos
     datos_actualizar = prod.model_dump(exclude_unset=True)
@@ -150,12 +229,29 @@ async def actualizar_parcial_producto(id: int, prod: ProductoUpdate):
     if not datos_actualizar and nuevo_stock is None:
          raise HTTPException(status_code=400, detail="No se enviaron datos válidos")
 
+    # Estado previo, para la bitácora de costo/precio (solo si alguno de los
+    # dos viene en el payload — evita una consulta extra en el caso común).
+    anterior = None
+    if "costo" in datos_actualizar or "precio_base" in datos_actualizar:
+        anterior = await database.fetch_one(producto.select().where(producto.c.id == id))
+
     # 2. Actualizar datos del producto (Nombre, Precio, etc.)
     if datos_actualizar:
         query = producto.update().where(producto.c.id == id).values(**datos_actualizar)
         result = await database.execute(query)
-        if result == 0 and nuevo_stock is None: 
+        if result == 0 and nuevo_stock is None:
             raise HTTPException(status_code=404, detail="Producto no encontrado")
+
+        if anterior is not None:
+            await registrar_cambio_precio(
+                producto_id=id,
+                usuario_id=usuario["id"],
+                costo_anterior=anterior["costo"],
+                costo_nuevo=datos_actualizar.get("costo"),
+                precio_anterior=anterior["precio_base"],
+                precio_nuevo=datos_actualizar.get("precio_base"),
+                origen="manual",
+            )
 
     # 3. ACTUALIZAR INVENTARIO (CON CONVERSIÓN INTELIGENTE)
     if nuevo_stock is not None:
@@ -200,8 +296,12 @@ async def actualizar_parcial_producto(id: int, prod: ProductoUpdate):
             await database.execute(query_inv)
 
     # 4. Retornar
-    # Reusamos la lógica del GET para devolver el producto con su stock sumado
-    return await obtener_producto(id) # Llamamos a la función que ya hace el Join
+    # Nota: no reusamos la función del GET porque ahora depende de la inyección
+    # de FastAPI (usuario_actual) y esta llamada es directa, no HTTP.
+    actualizado = await database.fetch_one(producto.select().where(producto.c.id == id))
+    if actualizado is None:
+        raise HTTPException(status_code=404, detail="Producto no encontrado")
+    return dict(actualizado)
 
 
 
@@ -213,5 +313,63 @@ async def eliminar_producto(id: int):
     
     if result == 0:
         raise HTTPException(status_code=404, detail="Producto no encontrado")
-        
+
     return {"mensaje": "Producto suspendido (soft-delete) exitosamente"}
+
+
+@router.get(
+    "/{id}/historial-precio",
+    response_model=List[HistorialPrecioProducto],
+    dependencies=[Depends(require_perm("productos.ver_costo"))],
+)
+async def historial_precio_producto(id: int):
+    """Bitácora de cambios de costo/precio_base — requiere el mismo permiso
+    que ver el costo, ya que el historial también lo expone."""
+    query = (
+        select(producto_historial_precio, usuario.c.nombre.label("usuario_nombre"))
+        .select_from(producto_historial_precio.join(usuario))
+        .where(producto_historial_precio.c.producto_id == id)
+        .order_by(desc(producto_historial_precio.c.fecha))
+    )
+    filas = await database.fetch_all(query)
+    return [dict(f) for f in filas]
+
+
+@router.get("/exportar/excel")
+async def exportar_lista_precios_excel(marca_id: Optional[int] = None):
+    """Lista de precios actual del catálogo (para la sección Listas) — no es
+    el reporte de inventario (que trae existencia); este es solo nombre +
+    presentación + precio, pensado para imprimir/mandar a un cliente."""
+    query = (
+        select(
+            producto.c.nombre,
+            producto.c.unidad_medida,
+            producto.c.contenido_neto,
+            producto.c.precio_base,
+            producto.c.precio_granel,
+            marca.c.nombre.label("marca_nombre"),
+        )
+        .select_from(producto.outerjoin(marca, producto.c.marca_id == marca.c.id))
+        .where(producto.c.activo == True)
+    )
+    if marca_id:
+        query = query.where(producto.c.marca_id == marca_id)
+    query = query.order_by(marca.c.nombre.nullslast(), producto.c.nombre)
+
+    resultados = await database.fetch_all(query)
+    encabezados = ["Marca", "Producto", "Presentación", "Precio"]
+    filas = [
+        [
+            r["marca_nombre"] or "Sin marca",
+            r["nombre"],
+            f"{r['contenido_neto']} {r['unidad_medida']}" if r["contenido_neto"] and float(r["contenido_neto"]) != 1 else r["unidad_medida"],
+            float(r["precio_base"]),
+        ]
+        for r in resultados
+    ]
+    contenido = generar_excel(encabezados, filas, "Lista de precios")
+    return Response(
+        content=contenido,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        headers={"Content-Disposition": "attachment; filename=lista_precios.xlsx"},
+    )

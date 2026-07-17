@@ -10,6 +10,8 @@ Roles canónicos (en minúsculas): 'vendedor', 'gerente', 'superadmin'.
 `superadmin` SIEMPRE pasa cualquier verificación de rol.
 """
 
+from typing import Optional
+
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from jose import JWTError, jwt
@@ -28,6 +30,9 @@ ROLES_VALIDOS = {ROL_VENDEDOR, ROL_GERENTE, ROL_SUPERADMIN}
 
 # tokenUrl solo se usa para la documentación interactiva (/docs)
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/token")
+# Variante que no exige token — para endpoints públicos (los usa Android sin
+# login) que igual quieren saber, si hay sesión, quién pregunta.
+oauth2_scheme_optional = OAuth2PasswordBearer(tokenUrl="/token", auto_error=False)
 
 _CRED_EXC = HTTPException(
     status_code=status.HTTP_401_UNAUTHORIZED,
@@ -52,6 +57,22 @@ async def get_current_user(token: str = Depends(oauth2_scheme)):
     if user is None:
         raise _CRED_EXC
     return user
+
+
+async def get_current_user_optional(token: Optional[str] = Depends(oauth2_scheme_optional)):
+    """Como `get_current_user` pero devuelve `None` en vez de fallar si no hay
+    token (o es inválido) — para endpoints públicos que igual quieren filtrar
+    datos sensibles cuando SÍ hay una sesión reconocible."""
+    if not token:
+        return None
+    try:
+        payload = jwt.decode(token, settings.SECRET_KEY, algorithms=[settings.ALGORITHM])
+        user_id = payload.get("id")
+        if user_id is None:
+            return None
+    except JWTError:
+        return None
+    return await database.fetch_one(select(usuario).where(usuario.c.id == user_id))
 
 
 def require_roles(*roles: str):

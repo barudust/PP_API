@@ -1,22 +1,27 @@
 # routers/atributos.py
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Depends
 from typing import List, Optional
 from app.models import marca, especie, etapa, tipo_producto
-from app.schemas import ( 
-    MarcaIn, Marca, EspecieIn, Especie, 
+from app.schemas import (
+    MarcaIn, Marca, EspecieIn, Especie,
     EtapaIn, Etapa,TipoProductoIn, TipoProducto
 )
 from app.core.database import database
+from app.core.dependencies import require_perm
 
 router = APIRouter(
     prefix="",  # O puedes poner "/atributos" si prefieres
     tags=["Atributos (Marcas, Especies, etc)"]
 )
 
+# Gestionar marcas (afecta precios/tolerancia/descuentos) requiere el mismo
+# permiso que gestionar el catálogo de productos.
+_gestion_marcas = Depends(require_perm("productos.gestionar"))
+
 # === MARCAS ===
 @router.get("/marcas", response_model=List[Marca])
-@router.get("/marcas/", response_model=List[Marca]) 
+@router.get("/marcas/", response_model=List[Marca])
 async def obtener_marcas(q: Optional[str] = Query(None, description="Buscar por nombre")):
     query = marca.select()
     if q:
@@ -32,13 +37,13 @@ async def obtener_marca(id: int):
         raise HTTPException(status_code=404, detail="Marca no encontrada")
     return result
 
-@router.post("/marcas/", response_model=Marca)
+@router.post("/marcas/", response_model=Marca, dependencies=[_gestion_marcas])
 async def crear_marca(m: MarcaIn):
     query = marca.insert().values(**m.model_dump())
     last_id = await database.execute(query)
     return {**m.model_dump(), "id": last_id}
 
-@router.put("/marcas/{id}", response_model=Marca)
+@router.put("/marcas/{id}", response_model=Marca, dependencies=[_gestion_marcas])
 async def actualizar_marca(id: int, m: MarcaIn):
     query = marca.update().where(marca.c.id == id).values(**m.model_dump())
     result = await database.execute(query)
@@ -46,7 +51,7 @@ async def actualizar_marca(id: int, m: MarcaIn):
         raise HTTPException(status_code=404, detail="Marca no encontrada")
     return {**m.model_dump(), "id": id}
 
-@router.delete("/marcas/{id}")
+@router.delete("/marcas/{id}", dependencies=[_gestion_marcas])
 async def eliminar_marca(id: int):
     query = marca.delete().where(marca.c.id == id)
     result = await database.execute(query)
