@@ -778,6 +778,22 @@ lo mismo verificando en este sandbox, no esperes a que se destrabe — cierra
 la pestaña (`tabs_close`) y abre una nueva; para probar el DELETE en sí, usa
 la API directamente (`requests.delete(...)`) en vez de clickear el botón.
 
+**Ronda 2 (misma sesión) — el dueño reportó "aún no tiene los estilos"**:
+tenía razón — `tonoNivel()` coloreaba los encabezados con `color-mix()`
+(CSS de 2023), que en un navegador sin soporte descarta la propiedad entera
+y deja el fondo transparente. Se cambió a una función JS pura que calcula
+`rgb()` plano (mismo resultado visual, cero dependencia del navegador) y se
+quitó una clase arbitraria de Tailwind (`bg-[var(--marca-color)]`) por el
+mismo motivo de robustez. También se agregó selección automática de la
+primera marca con plantilla al entrar a `/listas` — antes había que abrir el
+selector a mano, así que entrar sin tocarlo mostraba la tabla plana de
+siempre y parecía que Fase 16 no había cambiado nada. Verificado con
+`getComputedStyle()` (la herramienta de captura de pantalla de este entorno
+no funcionó en ningún intento de toda la sesión — ni antes ni después del
+fix — así que no confíes en un screenshot para verificar esto, usa
+`getComputedStyle()` sobre los elementos con `color-mix`/color de fondo).
+Detalle en `CHANGELOG.md` ("Ronda 2").
+
 ## 6. Decisiones de negocio que YA están resueltas (no las vuelvas a preguntar)
 
 Confirmadas explícitamente por el dueño — el detalle técnico de cada una está

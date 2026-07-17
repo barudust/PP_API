@@ -41,13 +41,24 @@ def _aclarar(rgb_hex: str, tint: float) -> str:
 _COLUMNAS_PANEL_EXPORT = {"izq": (1, 3, 4), "der": (5, 7, 8)}  # (col_nombre, col_precio, col_sep)
 
 
+_CENTRO = Alignment(horizontal="center", vertical="center")
+
+# Márgenes reducidos tomados celda-por-celda de los .xlsx originales del
+# dueño (openpyxl, en pulgadas) — así el Excel exportado imprime igual de
+# compacto que el que él ya usa, sin páginas extra en blanco.
+_MARGENES_IMPRESION = {"left": 0.24, "right": 0.2, "top": 0.28, "bottom": 0.2, "header": 0.31, "footer": 0.31}
+
+
 def generar_excel_plantilla(marca_nombre: str, color_hex: str, filas: Sequence[dict]) -> bytes:
     """Reconstruye el layout "menú a dos paneles" de Lista Agromas/Api-Aba
     (Fase 16, PLAN_FASE16.md §4.5) a partir de `lista_plantilla_fila` — no
     copia el .xlsx original celda por celda porque la estructura es editable
     desde la web (§6.6) y puede ya no coincidir con las filas del archivo
-    fuente; en cambio reproduce el mismo esquema visual (título, encabezados
-    con tinte de marca, paneles A-D/E-H) con los datos vigentes.
+    fuente; en cambio reproduce el mismo esquema visual (título centrado,
+    encabezados centrados con tinte de marca, nombres de producto centrados,
+    paneles A-D/E-H, bordes de celda) con los datos vigentes — replicando lo
+    que el dueño imprime hoy: texto centrado y área de impresión ajustada
+    (sin filas en blanco de sobra) con márgenes reducidos.
 
     `filas`: dicts con hoja, panel, orden, tipo, nivel, texto, precio_base.
     """
@@ -70,12 +81,15 @@ def generar_excel_plantilla(marca_nombre: str, color_hex: str, filas: Sequence[d
         titulo = ws.cell(row=1, column=1, value=marca_nombre)
         titulo.font = Font(size=26, bold=True)
         titulo.fill = PatternFill("solid", fgColor=f"FF{color_rgb}")
-        titulo.alignment = Alignment(horizontal="center", vertical="center")
+        titulo.alignment = _CENTRO
+        ws.row_dimensions[1].height = 20
+        ws.row_dimensions[2].height = 15
 
         por_panel: dict[str, list[dict]] = defaultdict(list)
         for f in filas_hoja:
             por_panel[f["panel"]].append(f)
 
+        ultima_fila = 2
         for panel, filas_panel in por_panel.items():
             col_nombre, col_precio, col_sep = _COLUMNAS_PANEL_EXPORT[panel]
             fila_excel = 3
@@ -87,18 +101,37 @@ def generar_excel_plantilla(marca_nombre: str, color_hex: str, filas: Sequence[d
                     celda = ws.cell(row=fila_excel, column=col_nombre, value=f["texto"])
                     celda.font = Font(size=16 if nivel <= 2 else 11, bold=True)
                     celda.fill = PatternFill("solid", fgColor=f"FF{_aclarar(color_rgb, tint)}")
+                    celda.alignment = _CENTRO
+                    ws.row_dimensions[fila_excel].height = 20.1 if nivel <= 2 else 15
                 else:
                     ws.merge_cells(start_row=fila_excel, start_column=col_nombre, end_row=fila_excel, end_column=col_nombre + 1)
                     celda_nombre = ws.cell(row=fila_excel, column=col_nombre, value=f["texto"])
                     celda_nombre.font = Font(size=11)
+                    celda_nombre.alignment = _CENTRO
                     celda_nombre.border = borde
-                    ws.cell(row=fila_excel, column=col_nombre + 1).border = borde
+                    celda_sep = ws.cell(row=fila_excel, column=col_nombre + 1)
+                    celda_sep.border = borde
                     precio: Optional[float] = f.get("precio_base")
                     celda_precio = ws.cell(row=fila_excel, column=col_precio, value=float(precio) if precio is not None else None)
                     celda_precio.border = borde
+                    celda_precio.alignment = _CENTRO
                     if precio is not None:
                         celda_precio.number_format = '"$"#,##0.00'
+                    ws.row_dimensions[fila_excel].height = 15
                 fila_excel += 1
+            ultima_fila = max(ultima_fila, fila_excel - 1)
+
+        # Área de impresión ajustada al contenido real (sin páginas extra en
+        # blanco) + márgenes reducidos, igual que el dueño ya imprime hoy.
+        ws.print_area = f"A1:H{ultima_fila}"
+        ws.page_setup.orientation = "portrait"
+        ws.page_setup.fitToPage = True
+        ws.page_setup.fitToWidth = 1
+        ws.page_setup.fitToHeight = 0
+        ws.sheet_properties.pageSetUpPr.fitToPage = True
+        pm = ws.page_margins
+        for lado, valor in _MARGENES_IMPRESION.items():
+            setattr(pm, lado, valor)
 
     buffer = BytesIO()
     wb.save(buffer)

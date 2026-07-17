@@ -110,6 +110,92 @@ desde la web** (decisión §6.6, ampliación real sobre el plan original).
   API); botones de exportar/reimportar visibles solo con el permiso
   correspondiente. Sin errores en consola.
 
+### Ronda 2 (misma sesión) — corrección de estilos
+El dueño reportó que la vista gráfica "aún no tiene los estilos" y pidió
+revisar todo y corregirlo sin volver a preguntar. Diagnóstico: `tonoNivel()`
+usaba `color-mix()` (CSS de 2023) para aclarar el color de marca en los
+encabezados — en un navegador que no lo soporte, la propiedad completa se
+descarta y el fondo queda transparente (se ve "sin estilo"), aunque en el
+navegador de verificación de la ronda 1 sí funcionaba. Se reemplazó por una
+función JS pura (`aclararColor`) que calcula `rgb()` plano — se renderiza
+igual sin importar el navegador. También se quitó la clase arbitraria de
+Tailwind `bg-[var(--marca-color)]` de las pestañas de hoja (dependía de que
+el JIT de Tailwind detectara ese literal) a favor de `style` inline directo.
+Además: la pantalla ahora **selecciona automáticamente la primera marca con
+plantilla al entrar** (antes había que abrir el selector y elegir Agromas/
+Api-Aba a mano — si el dueño solo entraba a `/listas` sin tocar el selector,
+veía la tabla plana de siempre y parecía que nada había cambiado), y pulido
+visual menor (separador entre los dos paneles, hover en filas de producto).
+Verificado con `getComputedStyle()` en el navegador (no con captura de
+pantalla — la herramienta de screenshot no funcionó en ningún intento de
+esta sesión): el fondo de "Cerdos" pasó de un `color-mix(...)` sin resolver
+a `rgb(245, 184, 142)` plano; las pestañas de Api-Aba muestran
+`rgb(112, 173, 71)` (verde de marca) en la activa. `tsc -b` limpio, sin
+errores de consola, 48 pytest siguen en verde (no se tocó nada de backend).
+
+### Ronda 3 (misma sesión) — colores en Imprimir/PDF + confirmación del Excel
+El dueño reportó que ni el PDF (Imprimir) ni el Excel exportado mostraban
+colores, y que no sabía dónde estaban los archivos generados.
+- **Excel**: se verificó programáticamente (`openpyxl`, no solo "no truena")
+  que el archivo exportado SÍ trae los rellenos correctos (título
+  `FFED7D31`, sección `FFF4B183`, línea `FFFBE5D6` para Agromas) — no era un
+  bug de backend. Se generaron los dos archivos frescos
+  (`lista_agromas.xlsx`, `lista_api-aba.xlsx`) y se enviaron directo al
+  dueño como archivos adjuntos, en vez de solo indicar el botón en la web.
+- **Imprimir/PDF — bug real, corregido**: la vista de solo-impresión de la
+  marca gráfica nunca tuvo colores (se dejó a propósito solo texto/negritas
+  en la ronda 1, sin registrarlo como limitación visible para el dueño).
+  Se agregó el mismo cálculo de color (`tonoNivel`) que ya usa la pantalla,
+  más la regla CSS `print-color-adjust: exact` en `index.css` (sin ella, la
+  mayoría de los navegadores omiten `background-color` al imprimir por
+  default, tratándolo como "decoración" no como contenido).
+- Verificado: el DOM del bloque `.printable` trae los `background-color`
+  correctos inline (título naranja pleno, "Cerdos" tinte medio, "Linea
+  suprema" tinte claro) y la regla `print-color-adjust` está presente en la
+  hoja de estilos compilada. `tsc -b` limpio.
+- Probable causa de "no veo cambios en la web": caché del navegador del
+  dueño con el bundle anterior — el mismo build, revisado fresco en esta
+  sesión, sí muestra la vista gráfica y los colores correctamente.
+
+### Ronda 4 (misma sesión) — réplica exacta: centrado, bordes de celda y área de impresión real
+El dueño aclaró que él mismo había quitado `ejemplos_importacion/` y
+`app/assets/plantillas/` de `.gitignore` a propósito, para sincronizar esos
+archivos vía git entre su máquina y otro laptop donde también trabaja — se
+revirtió el cambio de la Ronda 2/3 que los había vuelto a excluir (ver
+`.gitignore`, ya no los excluye). Pidió además una **réplica exacta** de
+`Lista Agromas.xlsx`/`Lista Api-Aba.xlsx` (texto centrado, "unión de filas",
+todos los libros de Api-Aba) y que se identificara el área de impresión real
+que él usa (márgenes reducidos) para replicarla en el portal.
+- Se inspeccionó con `openpyxl` la configuración real de los 2 archivos:
+  alineación de celda (título/encabezados/nombres de producto — **todos
+  centrados**, confirmado celda por celda), `print_area` de cada hoja
+  (Agromas `A1:H49`; Api-Aba Hoja1 `A1:H48`, Hoja2 `A1:H48`, Vimifos
+  `A1:H40` — se confirmó que las filas fuera de esa área están vacías, no se
+  perdía información) y márgenes de página (~0.2-0.35in, "reducidos" vs. el
+  default de ~1in).
+- **Excel** (`generar_excel_plantilla`): ahora centra título/encabezados/
+  nombre/precio (antes sin alineación explícita = quedaba a la izquierda),
+  calcula `ws.print_area` real por hoja (hasta la última fila con contenido,
+  sin páginas en blanco de sobra) y aplica los mismos márgenes reducidos +
+  `fitToPage`. Verificado con `openpyxl` sobre el archivo recién exportado:
+  `print_area` de Agromas salió **idéntico** al original (`A1:H49`).
+- **Vista gráfica en pantalla** (`ListasPage.tsx`): filas de producto
+  rediseñadas como celdas con borde (nombre y precio en su propia celda con
+  borde, ambos centrados) en vez de una fila de lista simple — más fiel al
+  "menú de celdas" del Excel original. Encabezados también centrados (se
+  quitó la sangría por nivel, que no existe en el archivo real — la
+  jerarquía visual ya la da el tamaño/color).
+- **Imprimir/PDF**: antes solo imprimía la hoja activa (para Api-Aba, había
+  que cambiar de pestaña e imprimir 3 veces); ahora **imprime las 3 hojas de
+  una sola vez**, cada una en su propia página (`page-break-before` por
+  hoja). Se agregó `@page { margin: 0.3in 0.2in }` (márgenes reducidos,
+  tomados de los archivos reales) y el mismo layout centrado/con bordes que
+  la pantalla.
+- Se generaron y enviaron directamente al dueño los 2 Excel exportados
+  (`lista_agromas_final.xlsx`, `lista_api-aba_final.xlsx`) para que los
+  pudiera confirmar sin depender de navegar la web app.
+- `tsc -b` limpio, 48 pytest en verde, sin errores de consola.
+
 ### Nota — decisión de alcance no explícitamente pedida por el dueño
 El dueño pidió "acoplar" los nombres del catálogo a la plantilla; se
 interpretó como **vincular sin renombrar** en vez de sobrescribir
